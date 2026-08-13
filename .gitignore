@@ -1,0 +1,9 @@
+# Ignore local rate limiter cache
+api/.rate_limits.json
+
+# Ignore PHPStorm / IDE files
+.idea/
+*.iml
+
+# Ignore Composer vendor directory if created
+vendor/

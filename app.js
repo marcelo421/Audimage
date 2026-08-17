@@ -18,6 +18,15 @@ let currentUser = null;
 const GOOGLE_CLIENT_ID = '428028486316-ek5l780hfk56p8sekojmfbgutiu1gcjt.apps.googleusercontent.com';
 let googleInitialized = false;
 
+// Kept in sync with AuthService::PASSWORD_MIN_LENGTH on the backend —
+// if you change one, change the other, otherwise users get a client-side
+// "success" that the server then rejects.
+const PASSWORD_MIN_LENGTH = 8;
+
+function isPasswordStrongEnough(pass) {
+  return pass.length >= PASSWORD_MIN_LENGTH && /[A-Za-z]/.test(pass) && /\d/.test(pass);
+}
+
 let csrfToken = null;
 
 async function ensureCsrf() {
@@ -43,6 +52,15 @@ async function apiPost(path, body) {
     body: JSON.stringify(body),
   });
 
+  const data = await response.json().catch(() => null);
+  if (!data) {
+    throw new Error('Resposta inválida do servidor.');
+  }
+  return { status: response.status, data };
+}
+
+async function apiGet(path) {
+  const response = await fetch(path, { credentials: 'include' });
   const data = await response.json().catch(() => null);
   if (!data) {
     throw new Error('Resposta inválida do servidor.');
@@ -102,7 +120,11 @@ async function doRegister() {
   const pass = document.getElementById('regPass').value;
 
   if (!user || !email || !pass) { showError('registerError', 'Preencha todos os campos.'); return; }
-  if (pass.length < 6) { showError('registerError', 'A senha precisa ter pelo menos 6 caracteres.'); return; }
+  // Same rule as AuthService::isPasswordStrongEnough() server-side.
+  if (!isPasswordStrongEnough(pass)) {
+    showError('registerError', `A senha precisa ter pelo menos ${PASSWORD_MIN_LENGTH} caracteres, incluindo letras e números.`);
+    return;
+  }
   if (!/\S+@\S+\.\S+/.test(email)) { showError('registerError', 'Email inválido.'); return; }
 
   try {
@@ -164,6 +186,7 @@ function loginAs(user) {
   updateUserChip();
   showToast('Bem-vindo, ' + user.username + '!');
   goToApp();
+  loadPresetsFromServer();
 }
 
 function updateUserChip() {
@@ -180,6 +203,7 @@ async function restoreSession() {
     if (data && data.ok && data.user) {
       currentUser = data.user;
       updateUserChip();
+      loadPresetsFromServer();
     }
   } catch (error) {
     console.warn('Falha ao restaurar sessão:', error);
@@ -218,9 +242,10 @@ function goToApp() {
 function goToLanding() {
   stopMic();
   if (currentUser) {
-    fetch('api/logout.php', { method: 'POST' }).catch(() => {});
+    apiPost('api/logout.php', {}).catch(() => {});
   }
   currentUser = null;
+  presets = [];
   document.getElementById('userAvatarChip').textContent = 'G';
   document.getElementById('userNameChip').textContent = 'Guest';
   showScreen('screen-landing');
@@ -651,34 +676,61 @@ function applyTheme(name) {
 }
 
 // ===== PRESETS / LIBRARY =====
-let presets = JSON.parse(localStorage.getItem('audimage_presets') || '[]');
+// Presets are now persisted server-side (table `presets`, scoped by user_id)
+// instead of localStorage — this is what makes "Presets ilimitados" an
+// actual account feature that syncs across devices, matching what the
+// pricing page advertises.
+let presets = [];
+let presetsLoading = false;
 
-function savePreset() {
+async function loadPresetsFromServer() {
+  if (!currentUser) { presets = []; renderPresets(); return; }
+  presetsLoading = true;
+  renderPresets();
+  try {
+    const { data } = await apiGet('api/presets.php');
+    presets = (data.ok && Array.isArray(data.presets)) ? data.presets : [];
+  } catch (e) {
+    presets = [];
+  } finally {
+    presetsLoading = false;
+    renderPresets();
+  }
+}
+
+async function savePreset() {
+  if (!currentUser) { showToast('Entre na sua conta para salvar presets.'); return; }
   const name = prompt('Nome do preset:');
   if (!name) return;
-  const preset = {
-    id: Date.now(), name,
-    shape: state.shape,
-    colorMode: state.colorMode,
-    intensity: state.intensity,
-    theme: state.theme,
-    color: themes[state.theme]?.viz || '#a78bfa',
-  };
-  presets.unshift(preset);
-  localStorage.setItem('audimage_presets', JSON.stringify(presets));
-  renderPresets();
-  showToast('Preset salvo: ' + name);
+
+  try {
+    const { data } = await apiPost('api/presets.php', {
+      name,
+      shape: state.shape,
+      colorMode: state.colorMode,
+      intensity: state.intensity,
+      theme: state.theme,
+    });
+    if (!data.ok) {
+      showToast(data.message || 'Falha ao salvar preset.');
+      return;
+    }
+    showToast('Preset salvo: ' + name);
+    await loadPresetsFromServer();
+  } catch (error) {
+    showToast(error.message || 'Falha ao salvar preset.');
+  }
 }
 
 function loadPreset(id) {
   const p = presets.find(x => x.id === id);
   if (!p) return;
   state.shape = p.shape;
-  state.colorMode = p.colorMode;
+  state.colorMode = p.color_mode;
   state.intensity = p.intensity;
   state.theme = p.theme;
   document.querySelectorAll('.shape-btn').forEach(b => b.classList.toggle('active', b.dataset.shape === p.shape));
-  setColorMode(p.colorMode);
+  setColorMode(p.color_mode);
   document.getElementById('intensitySlider').value = p.intensity;
   document.getElementById('intensityVal').textContent = p.intensity + '%';
   applyTheme(p.theme);
@@ -686,21 +738,32 @@ function loadPreset(id) {
   showToast('Preset carregado: ' + p.name);
 }
 
-function deletePreset(id) {
-  presets = presets.filter(x => x.id !== id);
-  localStorage.setItem('audimage_presets', JSON.stringify(presets));
-  renderPresets();
+async function deletePreset(id) {
+  try {
+    const { data } = await apiPost('api/preset-delete.php', { id });
+    if (!data.ok) {
+      showToast(data.message || 'Falha ao excluir preset.');
+      return;
+    }
+    await loadPresetsFromServer();
+  } catch (error) {
+    showToast(error.message || 'Falha ao excluir preset.');
+  }
 }
 
 function renderPresets() {
   const list = document.getElementById('presetList');
+  if (presetsLoading) {
+    list.innerHTML = `<p style="color:var(--text-muted);font-size:13px;text-align:center;margin-top:20px;opacity:0.7">Carregando presets...</p>`;
+    return;
+  }
   if (presets.length === 0) {
     list.innerHTML = `<p style="color:var(--text-muted);font-size:13px;text-align:center;margin-top:20px;opacity:0.7">Nenhum preset salvo ainda</p>`;
     return;
   }
   list.innerHTML = presets.map(p => `
     <div class="preset-item" onclick="loadPreset(${p.id})">
-      <div class="preset-dot" style="background:${escapeHtml(p.color)}"></div>
+      <div class="preset-dot" style="background:${escapeHtml(themes[p.theme]?.viz || '#a78bfa')}"></div>
       <div class="preset-info">
         <div class="preset-name">${escapeHtml(p.name)}</div>
         <div class="preset-desc">${escapeHtml(capitalize(p.shape))} · ${escapeHtml(String(p.intensity))}%</div>

@@ -8,7 +8,6 @@ final class CsrfTest extends TestCase
 {
     protected function setUp(): void
     {
-        // Reset session state
         if (session_status() === PHP_SESSION_ACTIVE) {
             session_unset();
             session_destroy();

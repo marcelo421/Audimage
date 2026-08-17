@@ -1,103 +1,119 @@
-AUDIMAGE - DOCUMENTAÇÃO DE INSTALAÇÃO E EXECUÇÃO
+AUDIMAGE — DOCUMENTAÇÃO DE INSTALAÇÃO E EXECUÇÃO
 ================================================
 
 1) O QUE É ESTE PROJETO
 -----------------------
-O AUDIMAGE é uma aplicação web em PHP + JavaScript para visualização interativa de áudio com autenticação de usuários.
-A interface principal fica em index.html e o fluxo de autenticação usa os arquivos da pasta api.
+O AUDIMAGE é uma aplicação web em PHP + JavaScript para visualização interativa
+de áudio com autenticação de usuários (login tradicional + Google OAuth 2.0) e
+persistência de presets por conta.
 
-2) REQUISITOS
-------------
-Para executar o projeto corretamente, você precisa de:
-- PHP com suporte a PDO MySQL
-- MySQL ou MariaDB em execução
-- Redis em execução para rate limiting (opcional, mas recomendado)
-- um servidor web local, como XAMPP, WAMP, Laragon ou o próprio PHP built-in
+A interface principal fica em `index.html`. O backend usa PHP 8+ com
+`declare(strict_types=1)`, autoload PSR-4 (`App\` -> `src/`) e o padrão
+Service-Repository com injeção de dependência manual (veja `api/dependencies.php`).
 
-3) STATUS ATUAL DA CONFIGURAÇÃO
---------------------------------
-Os arquivos PHP foram validados com sucesso quanto à sintaxe.
-Comandos verificados:
-- php -l api/db.php
-- php -l api/login.php
-- php -l api/register.php
-- php -l api/google-login.php
+2) ARQUITETURA
+--------------
+- `api/*.php` — controllers HTTP finos: validam CSRF/método, delegam para um
+  Service e traduzem exceções de domínio em respostas JSON. Não contêm regra
+  de negócio.
+- `src/Services/*` — regra de negócio pura, sem dependência de HTTP. Lançam
+  exceções tipadas (`App\Exception\*`) em vez de fazer `exit()`.
+- `src/Repository/*` — acesso a dados via PDO com prepared statements.
+- `src/Http/*` — utilitários de request/response/CSRF/security headers.
+- `src/Exception/*` — hierarquia de exceções de domínio; cada uma sabe seu
+  `httpStatus()` correspondente.
 
-Resultado: nenhuma sintaxe PHP foi encontrada com erro.
+Não existe mais um `api/db.php` paralelo à arquitetura OOP — toda conexão
+passa por `App\Database\Connection::createFromEnv()`, configurada via
+variáveis de ambiente (veja `.env.example`).
 
-4) COMO RODAR NO XAMPP (RECOMENDADO)
--------------------------------------
-Passo 1 - Instale e inicie o XAMPP
-- Abra o XAMPP Control Panel
-- Inicie Apache e MySQL
+3) REQUISITOS
+-------------
+- PHP 8.1+ com extensões PDO MySQL e OpenSSL
+- MySQL ou MariaDB
+- Redis em execução (obrigatório em produção — veja seção 7)
+- Composer (opcional, apenas para rodar os testes com PHPUnit)
 
-Passo 2 - Coloque o projeto na pasta htdocs
-Copie a pasta do projeto para:
-- C:\xampp\htdocs\audimage
+4) COMO RODAR COM DOCKER (RECOMENDADO)
+---------------------------------------
+O projeto inclui um `docker-compose.yml` com PHP + MySQL + Redis prontos:
 
-Passo 3 - Crie o banco MySQL
-Abra o phpMyAdmin ou o terminal do MySQL e execute:
+    docker compose up -d
+    docker compose exec app php migrations/migrate.php
 
-CREATE DATABASE audimage CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+Acesse:
 
-O projeto tenta criar o banco automaticamente, mas é bom garantir que ele exista.
+    http://localhost:8000/index.html
 
-Passo 4 - Ajuste as credenciais, se necessário
-O arquivo de conexão está em:
-- api/db.php
+5) COMO RODAR SEM DOCKER
+--------------------------
+Passo 1 — Configure as variáveis de ambiente
+Copie `.env.example` para `.env` (ou exporte as variáveis no seu ambiente)
+e ajuste `DB_HOST`, `DB_NAME`, `DB_USER`, `DB_PASS`, `REDIS_HOST`, `REDIS_PORT`.
 
-No XAMPP, normalmente funciona com:
-- host: 127.0.0.1
-- usuário: root
-- senha: '' (vazia)
+Passo 2 — Crie o banco e rode as migrações
 
-Se a sua instalação do XAMPP usa outra senha, altere os valores correspondentes.
+    mysql -u root -e "CREATE DATABASE audimage CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"
+    php migrations/migrate.php
 
-Passo 5 - Acesse o projeto no navegador
-Use:
-- http://localhost/audimage/index.html
+Passo 3 — Suba um servidor local
 
-5) COMO RODAR SEM XAMPP
------------------------
-Se você não quiser usar XAMPP, pode rodar diretamente com o PHP built-in:
-
-cd C:\caminho\da\pasta\audimage
-php -S localhost:8000
+    php -S localhost:8000
 
 Depois abra:
-- http://localhost:8000/index.html
+
+    http://localhost:8000/index.html
 
 6) ESTRUTURA DO BANCO
----------------------
-A tabela principal é users, com esta estrutura:
+----------------------
+Tabelas principais (ver `migrations/`):
 
-CREATE TABLE IF NOT EXISTS users (
-    id INT AUTO_INCREMENT PRIMARY KEY,
-    username VARCHAR(100) NOT NULL UNIQUE,
-    email VARCHAR(255) NOT NULL UNIQUE,
-    password_hash VARCHAR(255) NOT NULL,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+- `users` — contas de usuário (login local + Google)
+- `presets` — presets do visualizador, escopados por `user_id` (substituiu
+  o antigo armazenamento em `localStorage`, que não sincronizava entre
+  dispositivos e não sustentava a feature "Presets ilimitados" dos planos pagos)
+- `migrations` — controle de migrações já aplicadas
 
-7) POSSÍVEIS PROBLEMAS
----------------------
-Se o app não abrir corretamente, verifique:
-- o MySQL do XAMPP está ativo
-- o Redis está em execução, se configurado para rate limiting
-- o banco audimage existe
-- o PHP tem o módulo PDO MySQL habilitado
-- o projeto está sendo aberto via localhost e não via file://
-- as credenciais do banco em api/db.php estão corretas
+7) RATE LIMITING (IMPORTANTE)
+-------------------------------
+O rate limiter (`App\Services\RateLimiter`) usa Redis por padrão e **falha
+fechado**: se o Redis estiver indisponível, as requisições de login/registro
+são bloqueadas com erro 500, em vez de silenciosamente perder a limitação.
+
+Para desenvolvimento local sem Redis, é possível habilitar um fallback em
+arquivo (com lock), definindo:
+
+    RATE_LIMIT_ALLOW_FILE_FALLBACK=1
+
+Isso **não deve ser usado em produção** — é apenas para não bloquear o
+desenvolvimento local quando o Redis não está rodando.
 
 8) LOGIN COM GOOGLE
-------------------
-O login com Google depende de configuração externa no Google Cloud Console.
-Se o botão não funcionar, o problema pode estar relacionado ao domínio/host autorizado pelo Google.
+----------------------
+O ID token do Google é validado localmente (`App\Services\GoogleTokenVerifier`),
+verificando a assinatura RS256 contra as chaves públicas JWKS do Google, em
+vez de depender do endpoint de debug `tokeninfo`. Isso requer a extensão
+`openssl` do PHP habilitada.
 
-9) RESUMO
----------
-O projeto já está preparado para rodar localmente com PHP + MySQL, especialmente em XAMPP, desde que:
-- o MySQL esteja ativo
-- o banco audimage exista
-- as credenciais do banco estejam corretas
-- o app seja aberto por um servidor local
+Se o botão de login não funcionar, verifique se o domínio/host está
+autorizado no Google Cloud Console para o `client_id` configurado.
+
+9) TESTES
+-----------
+O projeto usa PHPUnit. Com o Composer instalado:
+
+    composer install
+    composer test
+
+Os testes cobrem CSRF, `AuthService` (com mocks, sem precisar de banco/HTTP)
+e o comportamento fail-closed do `RateLimiter`.
+
+10) POSSÍVEIS PROBLEMAS
+--------------------------
+Se o app não abrir corretamente, verifique:
+- o MySQL está ativo e o banco `audimage` existe com as migrações aplicadas
+- o Redis está em execução (ou `RATE_LIMIT_ALLOW_FILE_FALLBACK=1` está setado
+  apenas em ambiente local)
+- o PHP tem os módulos `pdo_mysql` e `openssl` habilitados
+- o projeto está sendo aberto via `localhost`, não via `file://`
+- as variáveis de ambiente do banco estão corretas

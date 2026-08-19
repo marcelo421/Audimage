@@ -6,133 +6,157 @@ namespace App\Services;
 
 use App\Exception\TooManyRequestsException;
 use Redis;
+use RedisException;
 
 /**
- * Rate limiter with two backends:
- *  - Redis (preferred, atomic INCR/EXPIRE, safe under concurrency)
- *  - File-based fallback with flock() (used only if explicitly allowed
- *    via RATE_LIMIT_ALLOW_FILE_FALLBACK=1, e.g. local dev without Redis)
+ * Rate limiter that fails CLOSED, not open.
  *
- * IMPORTANT: unlike the previous implementation, this class FAILS CLOSED.
- * If Redis is unavailable and the file fallback is not explicitly enabled,
- * enforce() throws instead of silently allowing unlimited attempts. A
- * security control that disappears silently when its dependency is down
- * is worse than no control at all — the caller must be able to trust that
- * "no exception" means "the limit was actually checked".
+ * If Redis is reachable, it is used (fast, shared across processes/hosts).
+ * If Redis is unavailable, we fall back to a file-based limiter instead of
+ * disabling rate limiting entirely — an attacker should never be able to
+ * bypass throttling just by causing Redis to be unreachable.
  */
 class RateLimiter
 {
     private ?Redis $redis = null;
-    private bool $allowFileFallback;
+    private int $maxAttempts;
+    private int $decaySeconds;
     private string $fallbackFile;
+    private string $fallbackMode;
 
     public function __construct(
-        private int $maxAttempts = 8,
-        private int $decaySeconds = 900,
-        ?bool $allowFileFallback = null,
+        int $maxAttempts = 8,
+        int $decaySeconds = 900,
         ?string $fallbackFile = null,
+        ?string $redisHost = null,
+        ?int $redisPort = null
     ) {
-        $this->allowFileFallback = $allowFileFallback ?? (getenv('RATE_LIMIT_ALLOW_FILE_FALLBACK') === '1');
-        $this->fallbackFile = $fallbackFile ?? (__DIR__ . '/../../storage/.rate_limits.json');
+        $this->maxAttempts = $maxAttempts;
+        $this->decaySeconds = $decaySeconds;
+        $this->fallbackFile = $fallbackFile ?? sys_get_temp_dir() . '/audimage_rate_limits.json';
+
+        // RATE_LIMITER_FALLBACK=closed rejects every request while Redis is
+        // down instead of degrading to the file-based limiter. Default is
+        // "file" so the app stays usable (with slightly coarser limiting)
+        // during a Redis outage rather than going fully unavailable.
+        $mode = strtolower((string)(getenv('RATE_LIMITER_FALLBACK') ?: 'file'));
+        $this->fallbackMode = $mode === 'closed' ? 'closed' : 'file';
+
+        $host = $redisHost ?? (getenv('REDIS_HOST') ?: '127.0.0.1');
+        $port = $redisPort ?? (int)(getenv('REDIS_PORT') ?: 6379);
 
         if (class_exists(Redis::class)) {
-            $redis = new Redis();
-            $host = getenv('REDIS_HOST') ?: '127.0.0.1';
-            $port = (int)(getenv('REDIS_PORT') ?: 6379);
-            if (@$redis->connect($host, $port, 1.0) === true) {
-                $this->redis = $redis;
+            try {
+                $redis = new Redis();
+                if (@$redis->connect($host, $port, 1.0) === true) {
+                    $this->redis = $redis;
+                }
+            } catch (RedisException $e) {
+                $this->redis = null;
+                error_log('RateLimiter: Redis connect failed, using file-based fallback: ' . $e->getMessage());
             }
         }
     }
 
-    /**
-     * @throws TooManyRequestsException if the limit was exceeded
-     * @throws \RuntimeException if no backend is available and the
-     *         file fallback was not explicitly enabled (fail-closed)
-     */
     public function enforce(string $scope, string $identifier): void
     {
-        $ip = $_SERVER['REMOTE_ADDR'] ?? 'unknown';
-        $key = hash('sha256', $scope . ':' . $identifier . ':' . $ip);
-
         if ($this->redis !== null) {
-            $this->enforceViaRedis($key);
-            return;
+            try {
+                $this->enforceWithRedis($scope, $identifier);
+                return;
+            } catch (RedisException $e) {
+                error_log('RateLimiter: Redis error mid-request, falling back to file limiter: ' . $e->getMessage());
+                $this->redis = null;
+                // fall through to file-based enforcement below
+            }
         }
 
-        if ($this->allowFileFallback) {
-            error_log('RateLimiter: Redis indisponível, usando fallback em arquivo.');
-            $this->enforceViaFile($key);
-            return;
+        if ($this->fallbackMode === 'closed') {
+            error_log('RateLimiter: Redis indisponível, RATE_LIMITER_FALLBACK=closed — bloqueando requisição.');
+            throw new TooManyRequestsException('Serviço temporariamente indisponível. Tente novamente em instantes.');
         }
 
-        // Fail closed: we cannot verify the caller is under the limit,
-        // so we refuse to proceed rather than silently allow the request.
-        error_log('RateLimiter: Redis indisponível e fallback em arquivo desabilitado. Bloqueando por segurança.');
-        throw new \RuntimeException(
-            'Serviço de limitação de taxa indisponível. Tente novamente em instantes.'
-        );
+        $this->enforceWithFile($scope, $identifier);
     }
 
-    private function enforceViaRedis(string $key): void
+    private function enforceWithRedis(string $scope, string $identifier): void
     {
-        $redisKey = 'rate_limit:' . $key;
-        $attempts = $this->redis->incr($redisKey);
+        $key = $this->buildKey($scope, $identifier);
+        $attempts = $this->redis->incr($key);
+
         if ($attempts === 1) {
-            $this->redis->expire($redisKey, $this->decaySeconds);
+            $this->redis->expire($key, $this->decaySeconds);
         }
+
         if ($attempts > $this->maxAttempts) {
             throw new TooManyRequestsException('Muitas tentativas. Tente novamente mais tarde.');
         }
     }
 
-    private function enforceViaFile(string $key): void
+    /**
+     * File-based fallback. Uses flock() for concurrency safety and prunes
+     * expired windows on every call. Not as fast/scalable as Redis, but it
+     * guarantees limiting still applies when Redis is down.
+     */
+    private function enforceWithFile(string $scope, string $identifier): void
     {
-        $dir = dirname($this->fallbackFile);
-        if (!is_dir($dir)) {
-            @mkdir($dir, 0770, true);
-        }
+        $key = $this->buildKey($scope, $identifier);
+        $now = time();
 
-        $fp = fopen($this->fallbackFile, 'c+');
-        if ($fp === false) {
-            throw new \RuntimeException('Não foi possível abrir o arquivo de rate limit.');
+        $handle = fopen($this->fallbackFile, 'c+');
+        if ($handle === false) {
+            // We cannot open the fallback store at all — fail closed rather
+            // than let the request through unthrottled.
+            throw new TooManyRequestsException('Limitador de tentativas indisponível. Tente novamente em instantes.');
         }
 
         try {
-            if (!flock($fp, LOCK_EX)) {
-                throw new \RuntimeException('Não foi possível obter lock do rate limit.');
+            if (!flock($handle, LOCK_EX)) {
+                throw new TooManyRequestsException('Limitador de tentativas indisponível. Tente novamente em instantes.');
             }
 
-            $raw = stream_get_contents($fp);
-            $data = $raw ? (json_decode($raw, true) ?: []) : [];
-            $now = time();
+            $size = fstat($handle)['size'] ?? 0;
+            $raw = $size > 0 ? fread($handle, $size) : '';
+            $data = $raw ? json_decode($raw, true) : [];
+            if (!is_array($data)) {
+                $data = [];
+            }
 
-            foreach ($data as $k => $entry) {
-                if (!isset($entry['window_start']) || ($now - (int)$entry['window_start']) > $this->decaySeconds) {
-                    unset($data[$k]);
+            foreach ($data as $entryKey => $entry) {
+                if (!is_array($entry) || !isset($entry['window_start']) || ($now - (int)$entry['window_start']) > $this->decaySeconds) {
+                    unset($data[$entryKey]);
                 }
             }
 
-            if (!isset($data[$key])) {
+            if (!isset($data[$key]) || !is_array($data[$key])) {
                 $data[$key] = ['count' => 0, 'window_start' => $now];
             }
+
             if (($now - (int)$data[$key]['window_start']) > $this->decaySeconds) {
                 $data[$key] = ['count' => 0, 'window_start' => $now];
             }
+
             $data[$key]['count'] = (int)$data[$key]['count'] + 1;
             $exceeded = $data[$key]['count'] > $this->maxAttempts;
 
-            ftruncate($fp, 0);
-            rewind($fp);
-            fwrite($fp, json_encode($data, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
-            fflush($fp);
-        } finally {
-            flock($fp, LOCK_UN);
-            fclose($fp);
-        }
+            ftruncate($handle, 0);
+            rewind($handle);
+            fwrite($handle, json_encode($data, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
+            fflush($handle);
 
-        if ($exceeded) {
-            throw new TooManyRequestsException('Muitas tentativas. Tente novamente mais tarde.');
+            if ($exceeded) {
+                throw new TooManyRequestsException('Muitas tentativas. Tente novamente mais tarde.');
+            }
+        } finally {
+            flock($handle, LOCK_UN);
+            fclose($handle);
         }
+    }
+
+    private function buildKey(string $scope, string $identifier): string
+    {
+        $safeScope = preg_replace('/[^a-zA-Z0-9_:-]/', '_', $scope);
+        $safeIdentifier = preg_replace('/[^a-zA-Z0-9_:-]/', '_', $identifier);
+        return sprintf('rate_limit:%s:%s', $safeScope, $safeIdentifier);
     }
 }

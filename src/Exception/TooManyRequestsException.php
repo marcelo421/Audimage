@@ -4,10 +4,8 @@ declare(strict_types=1);
 
 namespace App\Exception;
 
-class TooManyRequestsException extends DomainException
+use RuntimeException;
+
+class TooManyRequestsException extends RuntimeException
 {
-    public function httpStatus(): int
-    {
-        return 429;
-    }
 }

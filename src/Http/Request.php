@@ -20,12 +20,4 @@ class Request
 
         return $data;
     }
-
-    public static function requireAuthenticatedUserId(): int
-    {
-        if (empty($_SESSION['user']['id'])) {
-            JsonResponder::respond(['ok' => false, 'message' => 'Não autenticado.'], 401);
-        }
-        return (int)$_SESSION['user']['id'];
-    }
 }

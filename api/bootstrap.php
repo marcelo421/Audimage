@@ -1,9 +1,11 @@
 <?php
 declare(strict_types=1);
 
+require_once __DIR__ . '/../autoload.php';
+
 use App\Http\SecurityHeaders;
 
-require_once __DIR__ . '/../autoload.php';
+SecurityHeaders::apply();
 
 ini_set('session.use_strict_mode', '1');
 ini_set('session.use_only_cookies', '1');
@@ -19,5 +21,3 @@ if ((!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') || (isset($_SERVE
 if (session_status() !== PHP_SESSION_ACTIVE) {
     session_start();
 }
-
-SecurityHeaders::apply();

@@ -26,8 +26,8 @@
   <nav class="landing-nav">
     <div class="landing-logo-icon">A</div>
     <div class="landing-nav-buttons">
-      <button class="btn-glass" onclick="openAuth('login')">Login</button>
-      <button class="btn-glass" onclick="openAuth('register')">Cadastre-se</button>
+      <button id="landingLoginBtn" class="btn-glass" data-open-auth="login">Login</button>
+      <button id="landingRegisterBtn" class="btn-glass" data-open-auth="register">Cadastre-se</button>
     </div>
   </nav>
 
@@ -35,8 +35,8 @@
     <h1 class="landing-title">AUDIMAGE<span class="music-note">♪</span></h1>
     <p class="landing-sub">sinta a música com os olhos.</p>
     <div class="landing-btns">
-      <button class="btn-glass-primary" onclick="goToApp()">Começar grátis</button>
-      <button class="btn-glass-outline" onclick="showPlans()">Ver planos</button>
+      <button id="startFreeBtn" class="btn-glass-primary">Começar grátis</button>
+      <button id="viewPlansBtn" class="btn-glass-outline">Ver planos</button>
     </div>
   </div>
 
@@ -47,7 +47,7 @@
 <div id="screen-plans" class="screen">
   <nav class="plans-nav">
     <div class="landing-logo-icon">A</div>
-    <button class="plans-back-btn" onclick="showLanding()">
+    <button id="plansBackBtn" class="plans-back-btn">
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="15 18 9 12 15 6"/></svg>
       Voltar
     </button>
@@ -65,7 +65,7 @@
         <li>3 paletas de cores</li>
         <li>Biblioteca com 5 presets</li>
       </ul>
-      <button class="plan-btn" onclick="openAuth('register')">Começar grátis</button>
+      <button class="plan-btn" data-open-auth="register">Começar grátis</button>
     </div>
 
     <div class="plan-card featured">
@@ -80,7 +80,7 @@
         <li>Exportar visualizações</li>
         <li>Sem marca d'água</li>
       </ul>
-      <button class="plan-btn featured-btn" onclick="openAuth('register')">Assinar agora</button>
+      <button class="plan-btn featured-btn" data-open-auth="register">Assinar agora</button>
     </div>
 
     <div class="plan-card">
@@ -93,7 +93,7 @@
         <li>Acesso antecipado</li>
         <li>Suporte prioritário</li>
       </ul>
-      <button class="plan-btn" onclick="openAuth('register')">Melhor custo-benefício</button>
+      <button class="plan-btn" data-open-auth="register">Melhor custo-benefício</button>
     </div>
   </div>
 </div>
@@ -106,24 +106,24 @@
       <span class="app-title">AUDIMAGE</span>
     </div>
     <div class="header-right">
-      <button class="hdr-btn" id="btnFullscreen" title="Tela cheia" onclick="toggleFullscreen()">
+      <button class="hdr-btn" id="btnFullscreen" title="Tela cheia">
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/>
           <line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/>
         </svg>
       </button>
-      <button class="hdr-btn" id="btnLib" title="Biblioteca" onclick="toggleLib()">
+      <button class="hdr-btn" id="btnLib" title="Biblioteca">
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/>
         </svg>
       </button>
-      <button class="hdr-btn" id="btnSettings" title="Personalizar" onclick="toggleSettings()">
+      <button class="hdr-btn" id="btnSettings" title="Personalizar">
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <circle cx="12" cy="12" r="3"/>
-          <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+          <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0[...]
         </svg>
       </button>
-      <div class="user-chip" id="userChip" onclick="goToLanding()" title="Sair">
+      <div class="user-chip" id="userChip" title="Sair">
         <div class="user-avatar" id="userAvatarChip">G</div>
         <span class="user-name" id="userNameChip">Guest</span>
       </div>
@@ -133,7 +133,7 @@
   <div class="canvas-wrap">
     <canvas id="vizCanvas"></canvas>
     <div class="mic-wrap">
-      <button id="micBtn" onclick="toggleMic()">
+      <button id="micBtn">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="17" height="17">
           <path d="M12 2a3 3 0 0 1 3 3v7a3 3 0 0 1-6 0V5a3 3 0 0 1 3-3z"/>
           <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
@@ -148,7 +148,7 @@
   <div id="settingsPanel" class="side-panel">
     <div class="panel-title">
       Personalizar
-      <button class="panel-close" onclick="toggleSettings()">✕</button>
+      <button id="settingsCloseBtn" class="panel-close">✕</button>
     </div>
 
     <div class="panel-section">
@@ -168,8 +168,8 @@
     <div class="panel-section">
       <div class="section-label">Modo de cor</div>
       <div class="color-mode-row">
-        <button class="color-pill gradient active" id="pillGradient" onclick="setColorMode('gradient')" title="Espectro de cores"></button>
-        <button class="color-pill solid" id="pillSolid" onclick="setColorMode('solid')" title="Cor do tema"></button>
+        <button class="color-pill gradient active" id="pillGradient" title="Espectro de cores"></button>
+        <button class="color-pill solid" id="pillSolid" title="Cor do tema"></button>
       </div>
     </div>
 
@@ -179,7 +179,7 @@
         <span style="font-size:12px;color:var(--text-muted)">Nível</span>
         <span class="intensity-val" id="intensityVal">100%</span>
       </div>
-      <input type="range" id="intensitySlider" min="50" max="400" value="100" oninput="setIntensity(this.value)">
+      <input type="range" id="intensitySlider" min="50" max="400" value="100">
       <div class="slider-labels"><span>Suave</span><span>Forte</span></div>
     </div>
 
@@ -202,9 +202,9 @@
   <div id="libPanel" class="side-panel" style="z-index:31;">
     <div class="panel-title">
       Biblioteca
-      <button class="panel-close" onclick="toggleLib()">✕</button>
+      <button id="libCloseBtn" class="panel-close">✕</button>
     </div>
-    <button class="lib-save-btn" onclick="savePreset()">
+    <button id="libSaveBtn" class="lib-save-btn">
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
       Salvar configuração atual
     </button>
@@ -215,7 +215,7 @@
 <!-- ===== AUTH MODAL ===== -->
 <div id="authOverlay" class="auth-overlay">
   <div class="auth-modal">
-    <button class="auth-close" onclick="closeAuth()">✕</button>
+    <button id="authCloseBtn" class="auth-close">✕</button>
 
     <div class="auth-logo">
       <div class="auth-logo-icon">A</div>
@@ -242,17 +242,17 @@
         <input type="checkbox" id="rememberMe"> <span>Lembre-se de mim</span>
       </label>
 
-      <button class="auth-btn-main" onclick="doLogin()">Entrar</button>
+      <button id="loginBtn" class="auth-btn-main">Entrar</button>
 
       <div class="auth-divider"><span>ou</span></div>
 
-      <button class="auth-btn-google" onclick="loginGoogle()">
+      <button class="auth-btn-google">
         <div class="google-icon"></div>
         Entrar com Google
       </button>
 
       <div class="auth-switch">
-        Não tem conta? <a onclick="switchAuth('register')">Cadastre-se grátis</a>
+        Não tem conta? <a href="#" class="auth-switch-link" data-auth-view="register">Cadastre-se grátis</a>
       </div>
     </div>
 
@@ -276,17 +276,17 @@
         <input class="auth-input" id="regPass" type="password" placeholder="mínimo 8 caracteres, com letras e números" autocomplete="new-password">
       </div>
 
-      <button class="auth-btn-main" onclick="doRegister()">Criar conta</button>
+      <button id="registerBtn" class="auth-btn-main">Criar conta</button>
 
       <div class="auth-divider"><span>ou</span></div>
 
-      <button class="auth-btn-google" onclick="loginGoogle()">
+      <button class="auth-btn-google">
         <div class="google-icon"></div>
         Cadastrar com Google
       </button>
 
       <div class="auth-switch">
-        Já tem conta? <a onclick="switchAuth('login')">Fazer login</a>
+        Já tem conta? <a href="#" class="auth-switch-link" data-auth-view="login">Fazer login</a>
       </div>
     </div>
   </div>

@@ -1,23 +1,24 @@
 // ===== PALETTE SYSTEM =====
-const paletteDots = document.querySelectorAll('.palette-dot');
-paletteDots.forEach(dot => {
-  dot.addEventListener('click', () => {
-    paletteDots.forEach(d => d.classList.remove('active'));
-    dot.classList.add('active');
-    const p = dot.dataset.palette;
-    if (p === 'default') {
-      document.documentElement.removeAttribute('data-palette');
-    } else {
-      document.documentElement.setAttribute('data-palette', p);
-    }
+function initPaletteSystem() {
+  const paletteDots = document.querySelectorAll('.palette-dot');
+  paletteDots.forEach(dot => {
+    dot.addEventListener('click', () => {
+      paletteDots.forEach(d => d.classList.remove('active'));
+      dot.classList.add('active');
+      const p = dot.dataset.palette;
+      if (p === 'default') {
+        document.documentElement.removeAttribute('data-palette');
+      } else {
+        document.documentElement.setAttribute('data-palette', p);
+      }
+    });
   });
-});
+}
 
 // ===== USER STATE =====
 let currentUser = null;
 const GOOGLE_CLIENT_ID = '428028486316-ek5l780hfk56p8sekojmfbgutiu1gcjt.apps.googleusercontent.com';
 let googleInitialized = false;
-
 let csrfToken = null;
 
 async function ensureCsrf() {
@@ -102,10 +103,6 @@ async function doRegister() {
   const pass = document.getElementById('regPass').value;
 
   if (!user || !email || !pass) { showError('registerError', 'Preencha todos os campos.'); return; }
-  // Kept in sync with AuthService::register() on the backend: 8+ chars,
-  // at least one letter and one number. A frontend/backend mismatch here
-  // just means the user hits a confusing server error after "passing"
-  // client-side validation, so these two must never drift apart again.
   if (pass.length < 8 || !/[A-Za-z]/.test(pass) || !/\d/.test(pass)) {
     showError('registerError', 'A senha precisa ter pelo menos 8 caracteres, incluindo letras e números.');
     return;
@@ -193,19 +190,6 @@ async function restoreSession() {
   }
 }
 
-// Close modal on overlay click
-document.getElementById('authOverlay').addEventListener('click', function(e) {
-  if (e.target === this) closeAuth();
-});
-
-// Enter key support
-['loginUser','loginPass'].forEach(id => {
-  document.getElementById(id).addEventListener('keydown', e => { if (e.key === 'Enter') doLogin(); });
-});
-['regUser','regEmail','regPass'].forEach(id => {
-  document.getElementById(id).addEventListener('keydown', e => { if (e.key === 'Enter') doRegister(); });
-});
-
 // ===== SCREEN NAV =====
 function showScreen(id) {
   document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
@@ -225,12 +209,10 @@ function goToApp() {
 async function goToLanding() {
   stopMic();
   if (currentUser) {
-    // Uses apiPost (not a raw fetch) so the CSRF token header is attached —
-    // logout.php now validates it like every other state-changing endpoint.
     try {
       await apiPost('api/logout.php', {});
     } catch (e) {
-      // best-effort: proceed to clear client-side state regardless
+      // best-effort
     }
   }
   currentUser = null;
@@ -273,6 +255,7 @@ const ctx = canvas.getContext('2d');
 
 function resizeCanvas() {
   const wrap = canvas.parentElement;
+  if (!wrap) return;
   canvas.width = wrap.clientWidth;
   canvas.height = wrap.clientHeight;
 }
@@ -627,14 +610,6 @@ function toggleFullscreen() {
   }
 }
 
-document.getElementById('shapeGrid').addEventListener('click', e => {
-  const btn = e.target.closest('.shape-btn');
-  if (!btn) return;
-  document.querySelectorAll('.shape-btn').forEach(b => b.classList.remove('active'));
-  btn.classList.add('active');
-  state.shape = btn.dataset.shape;
-});
-
 function setColorMode(mode) {
   state.colorMode = mode;
   document.getElementById('pillGradient').classList.toggle('active', mode === 'gradient');
@@ -645,14 +620,6 @@ function setIntensity(val) {
   state.intensity = parseInt(val);
   document.getElementById('intensityVal').textContent = val + '%';
 }
-
-document.getElementById('themeGrid').addEventListener('click', e => {
-  const swatch = e.target.closest('.theme-swatch');
-  if (!swatch) return;
-  document.querySelectorAll('.theme-swatch').forEach(s => s.classList.remove('active'));
-  swatch.classList.add('active');
-  applyTheme(swatch.dataset.theme);
-});
 
 function applyTheme(name) {
   state.theme = name;
@@ -707,18 +674,21 @@ function deletePreset(id) {
 
 function renderPresets() {
   const list = document.getElementById('presetList');
+  if (!list) return;
+
   if (presets.length === 0) {
     list.innerHTML = `<p style="color:var(--text-muted);font-size:13px;text-align:center;margin-top:20px;opacity:0.7">Nenhum preset salvo ainda</p>`;
     return;
   }
+
   list.innerHTML = presets.map(p => `
-    <div class="preset-item" onclick="loadPreset(${p.id})">
+    <div class="preset-item" data-id="${p.id}">
       <div class="preset-dot" style="background:${escapeHtml(p.color)}"></div>
       <div class="preset-info">
         <div class="preset-name">${escapeHtml(p.name)}</div>
         <div class="preset-desc">${escapeHtml(capitalize(p.shape))} · ${escapeHtml(String(p.intensity))}%</div>
       </div>
-      <button class="preset-del" onclick="event.stopPropagation();deletePreset(${p.id})" title="Excluir">✕</button>
+      <button class="preset-del" data-id="${p.id}" title="Excluir">✕</button>
     </div>
   `).join('');
 }
@@ -775,10 +745,6 @@ function capitalize(str) {
   return str ? str.charAt(0).toUpperCase() + str.slice(1) : '';
 }
 
-// ===== INIT =====
-applyTheme('roxo');
-restoreSession();
-
 function ensureGoogleIdentityReady(count = 0) {
   if (window.google?.accounts?.id) {
     initGoogleIdentity();
@@ -790,5 +756,102 @@ function ensureGoogleIdentityReady(count = 0) {
   setTimeout(() => ensureGoogleIdentityReady(count + 1), 150);
 }
 
-ensureGoogleIdentityReady();
-renderPresets();
+// ===== ATTACH EVENT LISTENERS ON DOM LOAD =====
+document.addEventListener('DOMContentLoaded', () => {
+  initPaletteSystem();
+
+  // Screen Nav Buttons
+  document.getElementById('startFreeBtn')?.addEventListener('click', goToApp);
+  document.getElementById('viewPlansBtn')?.addEventListener('click', showPlans);
+  document.getElementById('plansBackBtn')?.addEventListener('click', showLanding);
+
+  // App Header Buttons
+  document.getElementById('btnFullscreen')?.addEventListener('click', toggleFullscreen);
+  document.getElementById('btnLib')?.addEventListener('click', toggleLib);
+  document.getElementById('btnSettings')?.addEventListener('click', toggleSettings);
+  document.getElementById('userChip')?.addEventListener('click', goToLanding);
+
+  // Panels Close / Action Buttons
+  document.getElementById('settingsCloseBtn')?.addEventListener('click', toggleSettings);
+  document.getElementById('libCloseBtn')?.addEventListener('click', toggleLib);
+  document.getElementById('authCloseBtn')?.addEventListener('click', closeAuth);
+  document.getElementById('micBtn')?.addEventListener('click', toggleMic);
+  document.getElementById('libSaveBtn')?.addEventListener('click', savePreset);
+
+  // Auth Forms
+  document.getElementById('loginBtn')?.addEventListener('click', doLogin);
+  document.getElementById('registerBtn')?.addEventListener('click', doRegister);
+
+  document.querySelectorAll('.auth-btn-google').forEach(btn => {
+    btn.addEventListener('click', loginGoogle);
+  });
+
+  document.querySelectorAll('[data-open-auth]').forEach(btn => {
+    btn.addEventListener('click', e => openAuth(e.currentTarget.dataset.openAuth));
+  });
+
+  document.querySelectorAll('.auth-switch-link').forEach(link => {
+    link.addEventListener('click', e => {
+      e.preventDefault();
+      switchAuth(e.currentTarget.dataset.authView);
+    });
+  });
+
+  // Modal Overlay click
+  document.getElementById('authOverlay')?.addEventListener('click', function(e) {
+    if (e.target === this) closeAuth();
+  });
+
+  // Enter key support for inputs
+  ['loginUser','loginPass'].forEach(id => {
+    document.getElementById(id)?.addEventListener('keydown', e => { if (e.key === 'Enter') doLogin(); });
+  });
+  ['regUser','regEmail','regPass'].forEach(id => {
+    document.getElementById(id)?.addEventListener('keydown', e => { if (e.key === 'Enter') doRegister(); });
+  });
+
+  // Visual Customization Controls
+  document.getElementById('shapeGrid')?.addEventListener('click', e => {
+    const btn = e.target.closest('.shape-btn');
+    if (!btn) return;
+    document.querySelectorAll('.shape-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    state.shape = btn.dataset.shape;
+  });
+
+  document.getElementById('pillGradient')?.addEventListener('click', () => setColorMode('gradient'));
+  document.getElementById('pillSolid')?.addEventListener('click', () => setColorMode('solid'));
+
+  const intensitySlider = document.getElementById('intensitySlider');
+  if (intensitySlider) {
+    intensitySlider.addEventListener('input', e => setIntensity(e.target.value));
+  }
+
+  document.getElementById('themeGrid')?.addEventListener('click', e => {
+    const swatch = e.target.closest('.theme-swatch');
+    if (!swatch) return;
+    document.querySelectorAll('.theme-swatch').forEach(s => s.classList.remove('active'));
+    swatch.classList.add('active');
+    applyTheme(swatch.dataset.theme);
+  });
+
+  // Presets List Delegation
+  document.getElementById('presetList')?.addEventListener('click', e => {
+    const delBtn = e.target.closest('.preset-del');
+    if (delBtn) {
+      e.stopPropagation();
+      deletePreset(Number(delBtn.dataset.id));
+      return;
+    }
+    const item = e.target.closest('.preset-item');
+    if (item) {
+      loadPreset(Number(item.dataset.id));
+    }
+  });
+
+  // INITIALIZATION
+  applyTheme('roxo');
+  restoreSession();
+  ensureGoogleIdentityReady();
+  renderPresets();
+});

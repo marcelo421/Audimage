@@ -22,7 +22,7 @@ class RateLimiter
     private int $maxAttempts;
     private int $decaySeconds;
     private string $fallbackFile;
-    private string $fallbackMode;
+    private bool $allowFileFallback;
 
     public function __construct(
         int $maxAttempts = 8,
@@ -35,12 +35,20 @@ class RateLimiter
         $this->decaySeconds = $decaySeconds;
         $this->fallbackFile = $fallbackFile ?? sys_get_temp_dir() . '/audimage_rate_limits.json';
 
-        // RATE_LIMITER_FALLBACK=closed rejects every request while Redis is
-        // down instead of degrading to the file-based limiter. Default is
-        // "file" so the app stays usable (with slightly coarser limiting)
-        // during a Redis outage rather than going fully unavailable.
-        $mode = strtolower((string)(getenv('RATE_LIMITER_FALLBACK') ?: 'file'));
-        $this->fallbackMode = $mode === 'closed' ? 'closed' : 'file';
+        // RATE_LIMIT_ALLOW_FILE_FALLBACK controls what happens when Redis is
+        // unreachable. Default (unset, or "1") = degrade to a file-based
+        // limiter, which is the right call for local dev/staging so the app
+        // stays usable without Redis running.
+        //
+        // In production this MUST be set to "0" explicitly. A per-host file
+        // fallback behind a load balancer is not a shared limiter — each
+        // instance counts independently, so the *effective* limit an
+        // attacker sees is max_attempts × number_of_instances. Fail-closed
+        // (reject with 503 instead) is the correct behavior once you have
+        // more than one app host, because a silently-weaker rate limiter is
+        // worse than a loud, alertable outage.
+        $flag = getenv('RATE_LIMIT_ALLOW_FILE_FALLBACK');
+        $this->allowFileFallback = $flag === false ? true : $flag !== '0';
 
         $host = $redisHost ?? (getenv('REDIS_HOST') ?: '127.0.0.1');
         $port = $redisPort ?? (int)(getenv('REDIS_PORT') ?: 6379);
@@ -53,9 +61,20 @@ class RateLimiter
                 }
             } catch (RedisException $e) {
                 $this->redis = null;
-                error_log('RateLimiter: Redis connect failed, using file-based fallback: ' . $e->getMessage());
+                error_log('RateLimiter: Redis connect failed: ' . $e->getMessage());
             }
         }
+    }
+
+    /**
+     * Reflects Redis connectivity at construction time. Used by the
+     * healthcheck endpoint — since a RateLimiter is constructed fresh per
+     * request (see api/dependencies.php), polling this via /api/health.php
+     * gives an up-to-date signal without any extra connection overhead.
+     */
+    public function isBackedByRedis(): bool
+    {
+        return $this->redis !== null;
     }
 
     public function enforce(string $scope, string $identifier): void
@@ -65,17 +84,21 @@ class RateLimiter
                 $this->enforceWithRedis($scope, $identifier);
                 return;
             } catch (RedisException $e) {
-                error_log('RateLimiter: Redis error mid-request, falling back to file limiter: ' . $e->getMessage());
+                error_log('RateLimiter: Redis error mid-request, Redis marked unavailable for rest of request: ' . $e->getMessage());
                 $this->redis = null;
-                // fall through to file-based enforcement below
+                // fall through to fallback handling below
             }
         }
 
-        if ($this->fallbackMode === 'closed') {
-            error_log('RateLimiter: Redis indisponível, RATE_LIMITER_FALLBACK=closed — bloqueando requisição.');
+        if (!$this->allowFileFallback) {
+            // Structured marker so log-based alerting (CloudWatch metric
+            // filter, Datadog log monitor, etc.) can match on this exact
+            // string regardless of future message wording changes.
+            error_log('[RATE_LIMITER_FALLBACK_TRIGGERED] mode=closed scope=' . $scope . ' redis_down=1');
             throw new TooManyRequestsException('Serviço temporariamente indisponível. Tente novamente em instantes.');
         }
 
+        error_log('[RATE_LIMITER_FALLBACK_TRIGGERED] mode=file scope=' . $scope . ' redis_down=1');
         $this->enforceWithFile($scope, $identifier);
     }
 

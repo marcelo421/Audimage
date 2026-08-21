@@ -12,7 +12,7 @@ final class RateLimiterTest extends TestCase
     protected function setUp(): void
     {
         $this->tmpFile = sys_get_temp_dir() . '/audimage_test_rate_limits_' . uniqid() . '.json';
-        putenv('RATE_LIMITER_FALLBACK'); // reset to default ("file")
+        putenv('RATE_LIMIT_ALLOW_FILE_FALLBACK'); // reset to default (unset = "1", file allowed)
         // Point at an unreachable host so Redis never connects in tests,
         // forcing every test through the fallback path deterministically.
         putenv('REDIS_HOST=127.0.0.1');
@@ -22,7 +22,7 @@ final class RateLimiterTest extends TestCase
     protected function tearDown(): void
     {
         @unlink($this->tmpFile);
-        putenv('RATE_LIMITER_FALLBACK');
+        putenv('RATE_LIMIT_ALLOW_FILE_FALLBACK');
         putenv('REDIS_HOST');
         putenv('REDIS_PORT');
     }
@@ -62,14 +62,22 @@ final class RateLimiterTest extends TestCase
         $limiter->enforce('login', 'alice@example.com');
     }
 
-    public function testClosedModeRejectsImmediatelyWithoutRedis(): void
+    public function testFileFallbackDisabledRejectsImmediatelyWithoutRedis(): void
     {
-        putenv('RATE_LIMITER_FALLBACK=closed');
+        putenv('RATE_LIMIT_ALLOW_FILE_FALLBACK=0');
         $limiter = new RateLimiter(maxAttempts: 100, decaySeconds: 900, fallbackFile: $this->tmpFile);
 
         // Fail-closed: even the FIRST attempt is rejected while the primary
         // store is unavailable, rather than silently letting it through.
+        // This is the required production setting (RATE_LIMIT_ALLOW_FILE_FALLBACK=0).
         $this->expectException(TooManyRequestsException::class);
         $limiter->enforce('login', 'user@example.com');
+    }
+
+    public function testIsBackedByRedisReflectsConnectivity(): void
+    {
+        // Unreachable host/port configured in setUp() -> Redis never connects.
+        $limiter = new RateLimiter(maxAttempts: 5, decaySeconds: 900, fallbackFile: $this->tmpFile);
+        $this->assertFalse($limiter->isBackedByRedis());
     }
 }

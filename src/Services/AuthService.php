@@ -12,7 +12,8 @@ class AuthService
     public function __construct(
         private UserRepository $users,
         private RateLimiter $rateLimiter,
-        private GoogleTokenVerifier $googleTokenVerifier
+        private GoogleTokenVerifier $googleTokenVerifier,
+        private EmailVerificationService $emailVerification
     ) {
     }
 
@@ -27,6 +28,15 @@ class AuthService
         $account = $this->users->findByUsernameOrEmail($user);
         if (!$account || !password_verify($password, $account['password_hash'])) {
             JsonResponder::respond(['ok' => false, 'message' => 'Usuário ou senha inválidos.'], 401);
+        }
+
+        if ($account['email_verified_at'] === null) {
+            JsonResponder::respond([
+                'ok' => false,
+                'message' => 'Confirme seu email antes de entrar. Verifique sua caixa de entrada.',
+                'requires_verification' => true,
+                'email' => $account['email'],
+            ], 403);
         }
 
         session_regenerate_id(true);
@@ -66,14 +76,20 @@ class AuthService
         $hash = password_hash($password, PASSWORD_DEFAULT);
         $userId = $this->users->createUser($username, $email, $hash);
 
-        session_regenerate_id(true);
-        $_SESSION['user'] = [
-            'id' => $userId,
-            'username' => $username,
-            'email' => $email,
-        ];
+        // Registration does NOT log the user in. Email/password accounts
+        // start unverified (email_verified_at IS NULL) and login() blocks
+        // until the link is clicked — decided in favor of "block", not
+        // "allow with a warning", because an unconfirmed email means we
+        // haven't established the user actually controls that inbox, and
+        // silently allowing access just defers the check to whenever
+        // someone notices.
+        $this->emailVerification->sendVerificationEmail($userId, $email, $username);
 
-        return ['ok' => true, 'user' => $_SESSION['user']];
+        return [
+            'ok' => true,
+            'requires_verification' => true,
+            'message' => 'Cadastro realizado! Confirme seu email para entrar.',
+        ];
     }
 
     public function googleLogin(string $credential): array
@@ -110,6 +126,15 @@ class AuthService
 
         $existingUser = $this->users->findByEmail($email);
         if ($existingUser) {
+            // Google itself just vouched for ownership of this email — at
+            // least as strong a proof as clicking our own confirmation
+            // link. If the account was stuck unverified (e.g. the user
+            // never clicked the original email), this unblocks it instead
+            // of leaving them stranded.
+            if ($existingUser['email_verified_at'] === null) {
+                $this->users->markEmailVerified((int)$existingUser['id']);
+            }
+
             session_regenerate_id(true);
             $_SESSION['user'] = [
                 'id' => (int)$existingUser['id'],
@@ -132,6 +157,8 @@ class AuthService
 
         $passwordHash = password_hash(bin2hex(random_bytes(16)), PASSWORD_DEFAULT);
         $userId = $this->users->createUser($username, $email, $passwordHash);
+        // No confirmation email needed — Google already verified this address.
+        $this->users->markEmailVerified($userId);
 
         session_regenerate_id(true);
         $_SESSION['user'] = [

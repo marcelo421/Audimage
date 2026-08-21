@@ -6,7 +6,7 @@ namespace App\Repository;
 
 use PDO;
 
-class UserRepository
+class UserRepository implements UserEmailVerificationLookupInterface
 {
     public function __construct(private PDO $pdo)
     {
@@ -14,14 +14,27 @@ class UserRepository
 
     public function findByUsernameOrEmail(string $value): array|false
     {
-        $stmt = $this->pdo->prepare('SELECT id, username, email, password_hash FROM users WHERE username = :value OR email = :value LIMIT 1');
+        $stmt = $this->pdo->prepare('SELECT id, username, email, password_hash, email_verified_at FROM users WHERE username = :value OR email = :value LIMIT 1');
         $stmt->execute([':value' => $value]);
         return $stmt->fetch();
     }
 
+    public function findById(int $id): array|false
+    {
+        $stmt = $this->pdo->prepare('SELECT id, username, email, email_verified_at FROM users WHERE id = :id LIMIT 1');
+        $stmt->execute([':id' => $id]);
+        return $stmt->fetch();
+    }
+
+    public function markEmailVerified(int $userId): void
+    {
+        $stmt = $this->pdo->prepare('UPDATE users SET email_verified_at = NOW() WHERE id = :id');
+        $stmt->execute([':id' => $userId]);
+    }
+
     public function findByEmail(string $email): array|false
     {
-        $stmt = $this->pdo->prepare('SELECT id, username, email FROM users WHERE email = :email LIMIT 1');
+        $stmt = $this->pdo->prepare('SELECT id, username, email, email_verified_at FROM users WHERE email = :email LIMIT 1');
         $stmt->execute([':email' => $email]);
         return $stmt->fetch();
     }

@@ -65,12 +65,16 @@ function closeAuth() {
 function switchAuth(view) {
   document.getElementById('loginView').style.display = view === 'login' ? 'block' : 'none';
   document.getElementById('registerView').style.display = view === 'register' ? 'block' : 'none';
+  document.getElementById('forgotView').style.display = view === 'forgot' ? 'block' : 'none';
+  document.getElementById('resetView').style.display = view === 'reset' ? 'block' : 'none';
   clearErrors();
 }
 
 function clearErrors() {
   document.getElementById('loginError').classList.remove('show');
   document.getElementById('registerError').classList.remove('show');
+  document.getElementById('forgotError').classList.remove('show');
+  document.getElementById('resetError').classList.remove('show');
 }
 
 function showError(id, msg) {
@@ -80,6 +84,7 @@ function showError(id, msg) {
 }
 
 let pendingResendEmail = null;
+let pendingResetToken = null;
 
 async function doLogin() {
   const user = document.getElementById('loginUser').value.trim();
@@ -157,6 +162,59 @@ async function doRegister() {
     loginAs(data.user);
   } catch (error) {
     showError('registerError', error.message);
+  }
+}
+
+async function doForgotPassword() {
+  const email = document.getElementById('forgotEmail').value.trim();
+  if (!email || !/\S+@\S+\.\S+/.test(email)) {
+    showError('forgotError', 'Digite um email válido.');
+    return;
+  }
+
+  try {
+    const { data } = await apiPost('api/forgot-password.php', { email });
+    if (!data.ok) {
+      // Only reachable for validation errors (bad email format) or rate
+      // limiting (429) — a nonexistent-but-valid email still returns ok:true.
+      showError('forgotError', data.message || 'Erro ao solicitar redefinição.');
+      return;
+    }
+    showToast(data.message || 'Se o email estiver cadastrado, enviamos um link de redefinição.');
+    switchAuth('login');
+  } catch (error) {
+    showError('forgotError', error.message);
+  }
+}
+
+async function doResetPassword() {
+  const pass = document.getElementById('resetPass').value;
+  const passConfirm = document.getElementById('resetPassConfirm').value;
+
+  if (pass.length < 8 || !/[A-Za-z]/.test(pass) || !/\d/.test(pass)) {
+    showError('resetError', 'A senha precisa ter pelo menos 8 caracteres, incluindo letras e números.');
+    return;
+  }
+  if (pass !== passConfirm) {
+    showError('resetError', 'As senhas não coincidem.');
+    return;
+  }
+  if (!pendingResetToken) {
+    showError('resetError', 'Link de redefinição inválido. Solicite um novo.');
+    return;
+  }
+
+  try {
+    const { data } = await apiPost('api/reset-password.php', { token: pendingResetToken, password: pass });
+    if (!data.ok) {
+      showError('resetError', data.message || 'Falha ao redefinir a senha.');
+      return;
+    }
+    pendingResetToken = null;
+    showToast(data.message || 'Senha redefinida! Faça login com a nova senha.');
+    switchAuth('login');
+  } catch (error) {
+    showError('resetError', error.message);
   }
 }
 
@@ -815,6 +873,23 @@ function capitalize(str) {
 applyTheme('roxo');
 restoreSession();
 handleVerificationRedirect();
+handleResetTokenFromUrl();
+
+function handleResetTokenFromUrl() {
+  const params = new URLSearchParams(window.location.search);
+  const token = params.get('reset_token');
+  if (!token) return;
+
+  pendingResetToken = token;
+  openAuth('reset');
+
+  // Clean the query string — the token stays in memory (pendingResetToken)
+  // for the actual reset-password.php call, no need to keep it in the URL
+  // (browser history, referrer headers on any outgoing request, etc.)
+  const url = new URL(window.location.href);
+  url.searchParams.delete('reset_token');
+  window.history.replaceState({}, '', url.pathname + url.hash);
+}
 
 function handleVerificationRedirect() {
   const params = new URLSearchParams(window.location.search);

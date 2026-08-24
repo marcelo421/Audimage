@@ -41,7 +41,7 @@ final class InMemoryEmailVerificationRepository implements EmailVerificationRepo
     }
 }
 
-final class InMemoryUserRepository implements UserEmailVerificationLookupInterface
+class InMemoryUserRepository implements UserEmailVerificationLookupInterface
 {
     /** @var array<int, array{id:int, username:string, email:string, email_verified_at:?string}> */
     public array $usersById = [];

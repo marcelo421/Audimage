@@ -46,15 +46,16 @@ foreach ($files as $file) {
         continue;
     }
 
+    // No explicit transaction here: MySQL DDL (CREATE TABLE, ALTER TABLE,
+    // etc.) triggers an implicit commit, so beginTransaction()/commit()/
+    // rollBack() around DDL is unreliable and can mask the real error with
+    // "There is no active transaction".
     try {
-        $pdo->beginTransaction();
         $pdo->exec($sql);
         $insertStmt->execute([':filename' => $basename]);
-        $pdo->commit();
         $new++;
         echo "Applied: {$basename}\n";
     } catch (Throwable $e) {
-        $pdo->rollBack();
         echo "Failed to apply {$basename}: " . $e->getMessage() . "\n";
         exit(1);
     }

@@ -6,7 +6,7 @@ namespace App\Repository;
 
 use PDO;
 
-class UserRepository implements UserPasswordResetLookupInterface
+class UserRepository implements UserEmailVerificationLookupInterface
 {
     public function __construct(private PDO $pdo)
     {
@@ -14,28 +14,9 @@ class UserRepository implements UserPasswordResetLookupInterface
 
     public function findByUsernameOrEmail(string $value): array|false
     {
-        $stmt = $this->pdo->prepare('SELECT id, username, email, password_hash, email_verified_at FROM users WHERE username = :value OR email = :value LIMIT 1');
-        $stmt->execute([':value' => $value]);
+        $stmt = $this->pdo->prepare('SELECT id, username, email, password_hash, email_verified_at FROM users WHERE username = :value1 OR email = :value2 LIMIT 1');
+        $stmt->execute([':value1' => $value, ':value2' => $value]);
         return $stmt->fetch();
-    }
-
-    public function findById(int $id): array|false
-    {
-        $stmt = $this->pdo->prepare('SELECT id, username, email, email_verified_at FROM users WHERE id = :id LIMIT 1');
-        $stmt->execute([':id' => $id]);
-        return $stmt->fetch();
-    }
-
-    public function markEmailVerified(int $userId): void
-    {
-        $stmt = $this->pdo->prepare('UPDATE users SET email_verified_at = NOW() WHERE id = :id');
-        $stmt->execute([':id' => $userId]);
-    }
-
-    public function updatePasswordHash(int $userId, string $passwordHash): void
-    {
-        $stmt = $this->pdo->prepare('UPDATE users SET password_hash = :password_hash WHERE id = :id');
-        $stmt->execute([':password_hash' => $passwordHash, ':id' => $userId]);
     }
 
     public function findByEmail(string $email): array|false
@@ -64,5 +45,11 @@ class UserRepository implements UserPasswordResetLookupInterface
         $stmt = $this->pdo->prepare('INSERT INTO users (username, email, password_hash) VALUES (:username, :email, :password_hash)');
         $stmt->execute([':username' => $username, ':email' => $email, ':password_hash' => $passwordHash]);
         return (int)$this->pdo->lastInsertId();
+    }
+
+    public function markEmailVerified(int $userId): void
+    {
+        $stmt = $this->pdo->prepare('UPDATE users SET email_verified_at = NOW() WHERE id = :id');
+        $stmt->execute([':id' => $userId]);
     }
 }

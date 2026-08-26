@@ -6,8 +6,8 @@ use App\Http\Csrf;
 
 require_once __DIR__ . '/bootstrap.php';
 
-// Validate CSRF token (header `X-CSRF-Token`) for state-changing requests,
-// consistent with login.php / register.php / google-login.php.
+// Only POST is accepted, and it must carry a valid CSRF token — otherwise
+// any third-party page could force a logout via a simple GET (img/script tag).
 if ($_SERVER['REQUEST_METHOD'] !== 'POST' || !Csrf::validateRequest()) {
     JsonResponder::respond(['ok' => false, 'message' => 'Invalid CSRF token'], 403);
 }

@@ -4,259 +4,243 @@ declare(strict_types=1);
 
 namespace App\Services;
 
+use RuntimeException;
+
 /**
- * Validates Google-issued ID tokens (JWTs) locally against Google's published
- * JWKS, using RS256 signature verification. This replaces the debug-only
- * `tokeninfo` endpoint, which is not intended for production use, has no SLA,
- * and imposes an aggressive rate limit that becomes a single point of failure
- * for login under load.
+ * Validates Google Sign-In ID tokens locally using Google's published JWKS
+ * (RS256), instead of relying on the debug-only `tokeninfo` endpoint.
  */
 class GoogleTokenVerifier
 {
-    private const JWKS_URI = 'https://www.googleapis.com/oauth2/v3/certs';
-    private const ALLOWED_ISSUERS = ['https://accounts.google.com', 'accounts.google.com'];
-    private const JWKS_CACHE_TTL = 3600;
-    private const CLOCK_SKEW_SECONDS = 60;
+    private const JWKS_URL = 'https://www.googleapis.com/oauth2/v3/certs';
+    private const ISSUERS = ['https://accounts.google.com', 'accounts.google.com'];
 
-    private string $clientId;
-    private string $cacheFile;
-
-    public function __construct(string $clientId, ?string $cacheFile = null)
+    public function __construct(private string $expectedAudience)
     {
-        $this->clientId = $clientId;
-        $this->cacheFile = $cacheFile ?? sys_get_temp_dir() . '/audimage_google_jwks_cache.json';
     }
 
     /**
-     * Returns the decoded JWT payload on success, or null if the token fails
-     * any structural, signature, or claim check. Callers must treat null as
-     * "reject the login" — never fall back to trusting an unverified payload.
+     * @return array<string, mixed> the decoded, verified payload
+     * @throws RuntimeException on any validation failure
      */
-    public function verify(string $idToken): ?array
+    public function verify(string $idToken): array
     {
         $parts = explode('.', $idToken);
         if (count($parts) !== 3) {
-            return null;
+            throw new RuntimeException('Formato de token inválido.');
         }
 
-        [$headerB64, $payloadB64, $signatureB64] = $parts;
+        [$headerB64, $payloadB64, $sigB64] = $parts;
 
         $header = json_decode($this->base64UrlDecode($headerB64), true);
         $payload = json_decode($this->base64UrlDecode($payloadB64), true);
-        $signature = $this->base64UrlDecode($signatureB64);
+        $signature = $this->base64UrlDecode($sigB64);
 
-        if (!is_array($header) || !is_array($payload) || $signature === '') {
-            return null;
+        if (!is_array($header) || !is_array($payload)) {
+            throw new RuntimeException('Token malformado.');
         }
 
-        // Reject "alg: none" and any algorithm confusion attempts outright.
-        if (($header['alg'] ?? null) !== 'RS256') {
-            return null;
+        if (($header['alg'] ?? '') !== 'RS256') {
+            throw new RuntimeException('Algoritmo de assinatura não suportado.');
         }
 
         $kid = $header['kid'] ?? null;
-        if (!is_string($kid) || $kid === '') {
-            return null;
+        if (!$kid) {
+            throw new RuntimeException('Token sem identificador de chave.');
         }
 
-        $publicKeyPem = $this->resolvePublicKey($kid);
-        if ($publicKeyPem === null) {
-            return null;
+        $publicKeyPem = $this->getPublicKeyForKid((string)$kid);
+        $signedInput = $headerB64 . '.' . $payloadB64;
+
+        $pubKey = openssl_pkey_get_public($publicKeyPem);
+        if ($pubKey === false) {
+            throw new RuntimeException('Falha ao carregar chave pública do Google.');
         }
 
-        $signingInput = $headerB64 . '.' . $payloadB64;
-        $verified = openssl_verify($signingInput, $signature, $publicKeyPem, OPENSSL_ALGO_SHA256);
+        $verified = openssl_verify($signedInput, $signature, $pubKey, OPENSSL_ALGO_SHA256);
         if ($verified !== 1) {
-            return null;
+            throw new RuntimeException('Assinatura do token inválida.');
         }
 
-        if (!$this->claimsAreValid($payload)) {
-            return null;
-        }
+        $this->assertClaims($payload);
 
         return $payload;
     }
 
-    private function claimsAreValid(array $payload): bool
+    private function assertClaims(array $payload): void
     {
-        if (!in_array($payload['iss'] ?? null, self::ALLOWED_ISSUERS, true)) {
-            return false;
-        }
-
-        if (($payload['aud'] ?? null) !== $this->clientId) {
-            return false;
-        }
-
         $now = time();
 
-        if (!isset($payload['exp']) || $now >= ((int)$payload['exp'] + self::CLOCK_SKEW_SECONDS)) {
-            return false;
+        if (!in_array($payload['iss'] ?? '', self::ISSUERS, true)) {
+            throw new RuntimeException('Emissor do token inválido.');
         }
 
-        if (isset($payload['iat']) && (int)$payload['iat'] > ($now + self::CLOCK_SKEW_SECONDS)) {
-            return false;
+        if (($payload['aud'] ?? '') !== $this->expectedAudience) {
+            throw new RuntimeException('Token não emitido para esta aplicação.');
         }
 
-        return true;
+        if (!isset($payload['exp']) || $now >= (int)$payload['exp']) {
+            throw new RuntimeException('Token expirado.');
+        }
+
+        if (isset($payload['iat']) && (int)$payload['iat'] > $now + 60) {
+            throw new RuntimeException('Token emitido no futuro.');
+        }
+
+        $emailVerified = $payload['email_verified'] ?? false;
+        if ($emailVerified !== true && $emailVerified !== 'true') {
+            throw new RuntimeException('Email do Google não verificado.');
+        }
+
+        if (empty($payload['email'])) {
+            throw new RuntimeException('Email do Google não encontrado.');
+        }
     }
 
-    private function resolvePublicKey(string $kid): ?string
+    private function getPublicKeyForKid(string $kid): string
     {
-        $jwk = $this->findKey($kid, $this->loadJwks(false));
-        if ($jwk === null) {
-            // Google rotates signing keys; force one fresh fetch before giving up,
-            // in case our cache is simply stale.
-            $jwk = $this->findKey($kid, $this->loadJwks(true));
-        }
+        $jwks = $this->fetchJwks();
 
-        return $jwk !== null ? $this->jwkToPem($jwk) : null;
-    }
-
-    private function findKey(string $kid, array $jwks): ?array
-    {
-        foreach ($jwks['keys'] ?? [] as $key) {
-            if (($key['kid'] ?? null) === $kid) {
-                return $key;
-            }
-        }
-        return null;
-    }
-
-    private function loadJwks(bool $forceRefresh): array
-    {
-        if (!$forceRefresh && is_file($this->cacheFile)) {
-            $raw = @file_get_contents($this->cacheFile);
-            $decoded = $raw !== false ? json_decode($raw, true) : null;
-            if (
-                is_array($decoded)
-                && isset($decoded['fetched_at'], $decoded['jwks'])
-                && (time() - (int)$decoded['fetched_at']) < self::JWKS_CACHE_TTL
-            ) {
-                return $decoded['jwks'];
+        foreach ($jwks['keys'] ?? [] as $jwk) {
+            if (($jwk['kid'] ?? '') === $kid) {
+                return $this->jwkToPem($jwk);
             }
         }
 
-        $fetched = $this->fetchJwks();
-        return $fetched ?? [];
+        throw new RuntimeException('Chave de assinatura do Google não encontrada (kid desconhecido).');
     }
 
-    private function fetchJwks(): ?array
+    /**
+     * Fetches and lightly caches Google's JWKS for the lifetime of the process/cache file.
+     */
+    private function fetchJwks(): array
     {
-        $raw = $this->httpGet(self::JWKS_URI);
-        if ($raw === null) {
-            return null;
+        $cacheFile = sys_get_temp_dir() . '/audimage_google_jwks.json';
+        $cacheTtl = 3600;
+
+        if (is_file($cacheFile) && (time() - filemtime($cacheFile)) < $cacheTtl) {
+            $cached = json_decode((string)file_get_contents($cacheFile), true);
+            if (is_array($cached) && !empty($cached['keys'])) {
+                return $cached;
+            }
         }
 
-        $jwks = json_decode($raw, true);
-        if (!is_array($jwks) || !isset($jwks['keys'])) {
-            return null;
+        $raw = $this->fetchUrl(self::JWKS_URL);
+        $decoded = json_decode($raw, true);
+        if (!is_array($decoded) || empty($decoded['keys'])) {
+            // Serve stale cache rather than fail completely, if we have one.
+            if (is_file($cacheFile)) {
+                $stale = json_decode((string)file_get_contents($cacheFile), true);
+                if (is_array($stale) && !empty($stale['keys'])) {
+                    return $stale;
+                }
+            }
+            throw new RuntimeException('Falha ao obter chaves públicas do Google.');
         }
 
-        @file_put_contents(
-            $this->cacheFile,
-            json_encode(['fetched_at' => time(), 'jwks' => $jwks], JSON_UNESCAPED_SLASHES),
-            LOCK_EX
-        );
+        @file_put_contents($cacheFile, json_encode($decoded), LOCK_EX);
 
-        return $jwks;
+        return $decoded;
     }
 
-    private function httpGet(string $url): ?string
+    private function fetchUrl(string $url): string
     {
         if (function_exists('curl_init')) {
             $ch = curl_init($url);
             curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-            curl_setopt($ch, CURLOPT_TIMEOUT, 10);
+            curl_setopt($ch, CURLOPT_TIMEOUT, 8);
             curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, true);
-            curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, 2);
             $result = curl_exec($ch);
+            $error = curl_error($ch);
             curl_close($ch);
-            return $result !== false ? $result : null;
+            if ($result === false) {
+                throw new RuntimeException('Falha de rede ao contatar o Google: ' . $error);
+            }
+            return (string)$result;
         }
 
-        $context = stream_context_create(['http' => ['timeout' => 10]]);
-        $result = @file_get_contents($url, false, $context);
-        return $result !== false ? $result : null;
+        $result = @file_get_contents($url);
+        if ($result === false) {
+            throw new RuntimeException('Falha de rede ao contatar o Google.');
+        }
+        return $result;
     }
 
     /**
-     * Rebuilds a DER-encoded SubjectPublicKeyInfo (PEM) RSA public key from a
-     * JWK's modulus (n) and exponent (e), so openssl_verify() can use it.
+     * Converts an RSA JWK (n, e) into a PEM-encoded public key using DER/ASN.1 encoding,
+     * without requiring any third-party JWT/crypto library.
      */
-    private function jwkToPem(array $jwk): ?string
+    private function jwkToPem(array $jwk): string
     {
-        if (($jwk['kty'] ?? null) !== 'RSA' || !isset($jwk['n'], $jwk['e'])) {
-            return null;
+        if (($jwk['kty'] ?? '') !== 'RSA' || empty($jwk['n']) || empty($jwk['e'])) {
+            throw new RuntimeException('Formato de chave JWK inesperado.');
         }
 
         $modulus = $this->base64UrlDecode($jwk['n']);
         $exponent = $this->base64UrlDecode($jwk['e']);
 
-        if ($modulus === '' || $exponent === '') {
-            return null;
-        }
+        $modulusEncoded = $this->derEncodeInteger($modulus);
+        $exponentEncoded = $this->derEncodeInteger($exponent);
 
-        // DER INTEGERs are two's-complement/signed: if the high bit of the
-        // leading byte is set, prefix a 0x00 so it isn't read as negative.
-        if ((ord($modulus[0]) & 0x80) !== 0) {
-            $modulus = "\x00" . $modulus;
-        }
-        if ((ord($exponent[0]) & 0x80) !== 0) {
-            $exponent = "\x00" . $exponent;
-        }
+        $rsaPublicKey = $this->derEncodeSequence($modulusEncoded . $exponentEncoded);
 
-        $rsaPublicKey = $this->derInteger($modulus) . $this->derInteger($exponent);
-        $rsaPublicKeySequence = $this->derSequence($rsaPublicKey);
+        // RSA algorithm identifier: SEQUENCE { OID rsaEncryption, NULL }
+        $algorithmIdentifier = $this->derEncodeSequence(
+            hex2bin('06092a864886f70d0101010500') // OID 1.2.840.113549.1.1.1 + NULL
+        );
 
-        // BIT STRING wrapping the RSAPublicKey SEQUENCE (leading 0x00 = no unused bits)
-        $bitStringContent = "\x00" . $rsaPublicKeySequence;
-        $bitString = "\x03" . $this->derLength(strlen($bitStringContent)) . $bitStringContent;
+        $publicKeyBitString = "\x00" . $rsaPublicKey; // prepend unused-bits byte
+        $bitString = $this->derEncode(0x03, $publicKeyBitString);
 
-        // AlgorithmIdentifier for rsaEncryption (1.2.840.113549.1.1.1) + NULL params
-        $algorithmIdentifier = hex2bin('300d06092a864886f70d0101010500');
-        if ($algorithmIdentifier === false) {
-            return null;
-        }
+        $spki = $this->derEncodeSequence($algorithmIdentifier . $bitString);
 
-        $spki = $this->derSequence($algorithmIdentifier . $bitString);
+        $base64 = base64_encode($spki);
+        $chunks = chunk_split($base64, 64, "\n");
 
-        return "-----BEGIN PUBLIC KEY-----\n" . chunk_split(base64_encode($spki), 64, "\n") . "-----END PUBLIC KEY-----\n";
+        return "-----BEGIN PUBLIC KEY-----\n{$chunks}-----END PUBLIC KEY-----\n";
     }
 
-    private function derInteger(string $bytes): string
+    private function derEncodeInteger(string $bin): string
     {
-        return "\x02" . $this->derLength(strlen($bytes)) . $bytes;
+        // Strip leading zero bytes, but keep a leading 0x00 if the high bit is set
+        // (so it isn't interpreted as a negative number).
+        $bin = ltrim($bin, "\x00");
+        if ($bin === '') {
+            $bin = "\x00";
+        }
+        if ((ord($bin[0]) & 0x80) !== 0) {
+            $bin = "\x00" . $bin;
+        }
+        return $this->derEncode(0x02, $bin);
     }
 
-    private function derSequence(string $bytes): string
+    private function derEncodeSequence(string $bin): string
     {
-        return "\x30" . $this->derLength(strlen($bytes)) . $bytes;
+        return $this->derEncode(0x30, $bin);
     }
 
-    private function derLength(int $length): string
+    private function derEncode(int $tag, string $bin): string
     {
-        if ($length <= 0x7f) {
-            return chr($length);
+        $length = strlen($bin);
+        if ($length < 128) {
+            $lengthBytes = chr($length);
+        } else {
+            $temp = ltrim(pack('N', $length), "\x00");
+            $lengthBytes = chr(0x80 | strlen($temp)) . $temp;
         }
-
-        $bytes = '';
-        while ($length > 0) {
-            $bytes = chr($length & 0xff) . $bytes;
-            $length >>= 8;
-        }
-
-        return chr(0x80 | strlen($bytes)) . $bytes;
+        return chr($tag) . $lengthBytes . $bin;
     }
 
     private function base64UrlDecode(string $data): string
     {
-        $padded = strtr($data, '-_', '+/');
-        $remainder = strlen($padded) % 4;
+        $remainder = strlen($data) % 4;
         if ($remainder) {
-            $padded .= str_repeat('=', 4 - $remainder);
+            $data .= str_repeat('=', 4 - $remainder);
         }
-
-        $decoded = base64_decode($padded, true);
-        return $decoded !== false ? $decoded : '';
+        $decoded = base64_decode(strtr($data, '-_', '+/'));
+        if ($decoded === false) {
+            throw new RuntimeException('Falha ao decodificar token.');
+        }
+        return $decoded;
     }
 }

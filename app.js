@@ -31,18 +31,27 @@ async function ensureCsrf() {
   }
 }
 
-async function apiPost(path, body) {
+async function apiPost(path, body, method = 'POST') {
   await ensureCsrf();
   const headers = { 'Content-Type': 'application/json' };
   if (csrfToken) headers['X-CSRF-Token'] = csrfToken;
 
   const response = await fetch(path, {
-    method: 'POST',
+    method,
     credentials: 'include',
     headers,
-    body: JSON.stringify(body),
+    body: body !== undefined ? JSON.stringify(body) : undefined,
   });
 
+  const data = await response.json().catch(() => null);
+  if (!data) {
+    throw new Error('Resposta inválida do servidor.');
+  }
+  return { status: response.status, data };
+}
+
+async function apiGet(path) {
+  const response = await fetch(path, { credentials: 'include' });
   const data = await response.json().catch(() => null);
   if (!data) {
     throw new Error('Resposta inválida do servidor.');
@@ -65,16 +74,12 @@ function closeAuth() {
 function switchAuth(view) {
   document.getElementById('loginView').style.display = view === 'login' ? 'block' : 'none';
   document.getElementById('registerView').style.display = view === 'register' ? 'block' : 'none';
-  document.getElementById('forgotView').style.display = view === 'forgot' ? 'block' : 'none';
-  document.getElementById('resetView').style.display = view === 'reset' ? 'block' : 'none';
   clearErrors();
 }
 
 function clearErrors() {
   document.getElementById('loginError').classList.remove('show');
   document.getElementById('registerError').classList.remove('show');
-  document.getElementById('forgotError').classList.remove('show');
-  document.getElementById('resetError').classList.remove('show');
 }
 
 function showError(id, msg) {
@@ -82,9 +87,6 @@ function showError(id, msg) {
   el.textContent = msg;
   el.classList.add('show');
 }
-
-let pendingResendEmail = null;
-let pendingResetToken = null;
 
 async function doLogin() {
   const user = document.getElementById('loginUser').value.trim();
@@ -94,12 +96,6 @@ async function doLogin() {
   try {
     const { data } = await apiPost('api/login.php', { user, pass });
     if (!data.ok) {
-      if (data.requires_verification) {
-        pendingResendEmail = data.email || user;
-        showError('loginError', (data.message || 'Confirme seu email antes de entrar.') + ' ');
-        showResendLink('loginError');
-        return;
-      }
       showError('loginError', data.message || 'Falha ao entrar.');
       return;
     }
@@ -109,37 +105,13 @@ async function doLogin() {
   }
 }
 
-function showResendLink(errorElId) {
-  const el = document.getElementById(errorElId);
-  const link = document.createElement('a');
-  link.href = '#';
-  link.textContent = 'Reenviar email de confirmação';
-  link.style.textDecoration = 'underline';
-  link.style.marginLeft = '4px';
-  link.onclick = (e) => { e.preventDefault(); resendVerificationEmail(); };
-  el.appendChild(link);
-}
-
-async function resendVerificationEmail() {
-  if (!pendingResendEmail) return;
-  try {
-    const { data } = await apiPost('api/resend-verification.php', { email: pendingResendEmail });
-    showToast(data.message || 'Se o email estiver cadastrado, um novo link foi enviado.');
-  } catch (error) {
-    showToast(error.message || 'Erro ao reenviar email.');
-  }
-}
-
 async function doRegister() {
   const user = document.getElementById('regUser').value.trim();
   const email = document.getElementById('regEmail').value.trim();
   const pass = document.getElementById('regPass').value;
 
   if (!user || !email || !pass) { showError('registerError', 'Preencha todos os campos.'); return; }
-  // Kept in sync with AuthService::register() on the backend: 8+ chars,
-  // at least one letter and one number. A frontend/backend mismatch here
-  // just means the user hits a confusing server error after "passing"
-  // client-side validation, so these two must never drift apart again.
+  // Kept in sync with backend AuthService::register (min 8 chars, letters + numbers).
   if (pass.length < 8 || !/[A-Za-z]/.test(pass) || !/\d/.test(pass)) {
     showError('registerError', 'A senha precisa ter pelo menos 8 caracteres, incluindo letras e números.');
     return;
@@ -152,69 +124,9 @@ async function doRegister() {
       showError('registerError', data.message || 'Falha ao cadastrar.');
       return;
     }
-    if (data.requires_verification) {
-      pendingResendEmail = email;
-      switchAuth('login');
-      showToast(data.message || 'Cadastro realizado! Confirme seu email para entrar.');
-      return;
-    }
-    // Fallback path, kept for compatibility if verification is ever disabled server-side.
     loginAs(data.user);
   } catch (error) {
     showError('registerError', error.message);
-  }
-}
-
-async function doForgotPassword() {
-  const email = document.getElementById('forgotEmail').value.trim();
-  if (!email || !/\S+@\S+\.\S+/.test(email)) {
-    showError('forgotError', 'Digite um email válido.');
-    return;
-  }
-
-  try {
-    const { data } = await apiPost('api/forgot-password.php', { email });
-    if (!data.ok) {
-      // Only reachable for validation errors (bad email format) or rate
-      // limiting (429) — a nonexistent-but-valid email still returns ok:true.
-      showError('forgotError', data.message || 'Erro ao solicitar redefinição.');
-      return;
-    }
-    showToast(data.message || 'Se o email estiver cadastrado, enviamos um link de redefinição.');
-    switchAuth('login');
-  } catch (error) {
-    showError('forgotError', error.message);
-  }
-}
-
-async function doResetPassword() {
-  const pass = document.getElementById('resetPass').value;
-  const passConfirm = document.getElementById('resetPassConfirm').value;
-
-  if (pass.length < 8 || !/[A-Za-z]/.test(pass) || !/\d/.test(pass)) {
-    showError('resetError', 'A senha precisa ter pelo menos 8 caracteres, incluindo letras e números.');
-    return;
-  }
-  if (pass !== passConfirm) {
-    showError('resetError', 'As senhas não coincidem.');
-    return;
-  }
-  if (!pendingResetToken) {
-    showError('resetError', 'Link de redefinição inválido. Solicite um novo.');
-    return;
-  }
-
-  try {
-    const { data } = await apiPost('api/reset-password.php', { token: pendingResetToken, password: pass });
-    if (!data.ok) {
-      showError('resetError', data.message || 'Falha ao redefinir a senha.');
-      return;
-    }
-    pendingResetToken = null;
-    showToast(data.message || 'Senha redefinida! Faça login com a nova senha.');
-    switchAuth('login');
-  } catch (error) {
-    showError('resetError', error.message);
   }
 }
 
@@ -265,6 +177,7 @@ function loginAs(user) {
   updateUserChip();
   showToast('Bem-vindo, ' + user.username + '!');
   goToApp();
+  loadPresetsFromServer();
 }
 
 function updateUserChip() {
@@ -281,6 +194,7 @@ async function restoreSession() {
     if (data && data.ok && data.user) {
       currentUser = data.user;
       updateUserChip();
+      loadPresetsFromServer();
     }
   } catch (error) {
     console.warn('Falha ao restaurar sessão:', error);
@@ -319,15 +233,12 @@ function goToApp() {
 async function goToLanding() {
   stopMic();
   if (currentUser) {
-    // Uses apiPost (not a raw fetch) so the CSRF token header is attached —
-    // logout.php now validates it like every other state-changing endpoint.
-    try {
-      await apiPost('api/logout.php', {});
-    } catch (e) {
-      // best-effort: proceed to clear client-side state regardless
-    }
+    // logout.php now requires POST + a valid CSRF token, so use apiPost
+    // instead of a bare fetch (which previously allowed logout CSRF).
+    try { await apiPost('api/logout.php', undefined); } catch (e) { /* ignore */ }
   }
   currentUser = null;
+  presets = [];
   document.getElementById('userAvatarChip').textContent = 'G';
   document.getElementById('userNameChip').textContent = 'Guest';
   showScreen('screen-landing');
@@ -758,23 +669,53 @@ function applyTheme(name) {
 }
 
 // ===== PRESETS / LIBRARY =====
-let presets = JSON.parse(localStorage.getItem('audimage_presets') || '[]');
+// Presets now live server-side (api/presets.php), scoped to the logged-in
+// user_id. They are no longer stored in localStorage, which previously let
+// any script on the page (or a shared/public machine) read or tamper with
+// another session's saved presets (IDOR).
+let presets = [];
+let presetsLoaded = false;
 
-function savePreset() {
+async function loadPresetsFromServer() {
+  if (!currentUser) { presets = []; presetsLoaded = false; return; }
+  try {
+    const { data } = await apiGet('api/presets.php');
+    if (data.ok) {
+      presets = data.presets || [];
+      presetsLoaded = true;
+      if (state.libOpen) renderPresets();
+    }
+  } catch (e) {
+    console.warn('Falha ao carregar presets:', e);
+  }
+}
+
+async function savePreset() {
+  if (!currentUser) { showToast('Entre na sua conta para salvar presets.'); return; }
   const name = prompt('Nome do preset:');
   if (!name) return;
-  const preset = {
-    id: Date.now(), name,
+
+  const payload = {
+    name,
     shape: state.shape,
     colorMode: state.colorMode,
     intensity: state.intensity,
     theme: state.theme,
     color: themes[state.theme]?.viz || '#a78bfa',
   };
-  presets.unshift(preset);
-  localStorage.setItem('audimage_presets', JSON.stringify(presets));
-  renderPresets();
-  showToast('Preset salvo: ' + name);
+
+  try {
+    const { data } = await apiPost('api/presets.php', payload);
+    if (!data.ok) {
+      showToast(data.message || 'Falha ao salvar preset.');
+      return;
+    }
+    await loadPresetsFromServer();
+    renderPresets();
+    showToast('Preset salvo: ' + name);
+  } catch (e) {
+    showToast(e.message || 'Falha ao salvar preset.');
+  }
 }
 
 function loadPreset(id) {
@@ -793,14 +734,26 @@ function loadPreset(id) {
   showToast('Preset carregado: ' + p.name);
 }
 
-function deletePreset(id) {
-  presets = presets.filter(x => x.id !== id);
-  localStorage.setItem('audimage_presets', JSON.stringify(presets));
-  renderPresets();
+async function deletePreset(id) {
+  try {
+    const { data } = await apiPost('api/presets.php?id=' + encodeURIComponent(id), undefined, 'DELETE');
+    if (!data.ok) {
+      showToast(data.message || 'Falha ao excluir preset.');
+      return;
+    }
+    await loadPresetsFromServer();
+    renderPresets();
+  } catch (e) {
+    showToast(e.message || 'Falha ao excluir preset.');
+  }
 }
 
 function renderPresets() {
   const list = document.getElementById('presetList');
+  if (!currentUser) {
+    list.innerHTML = `<p style="color:var(--text-muted);font-size:13px;text-align:center;margin-top:20px;opacity:0.7">Entre na sua conta para ver seus presets</p>`;
+    return;
+  }
   if (presets.length === 0) {
     list.innerHTML = `<p style="color:var(--text-muted);font-size:13px;text-align:center;margin-top:20px;opacity:0.7">Nenhum preset salvo ainda</p>`;
     return;
@@ -872,43 +825,6 @@ function capitalize(str) {
 // ===== INIT =====
 applyTheme('roxo');
 restoreSession();
-handleVerificationRedirect();
-handleResetTokenFromUrl();
-
-function handleResetTokenFromUrl() {
-  const params = new URLSearchParams(window.location.search);
-  const token = params.get('reset_token');
-  if (!token) return;
-
-  pendingResetToken = token;
-  openAuth('reset');
-
-  // Clean the query string — the token stays in memory (pendingResetToken)
-  // for the actual reset-password.php call, no need to keep it in the URL
-  // (browser history, referrer headers on any outgoing request, etc.)
-  const url = new URL(window.location.href);
-  url.searchParams.delete('reset_token');
-  window.history.replaceState({}, '', url.pathname + url.hash);
-}
-
-function handleVerificationRedirect() {
-  const params = new URLSearchParams(window.location.search);
-  if (!params.has('verified')) return;
-
-  const verified = params.get('verified') === '1';
-  if (verified) {
-    showToast('Email confirmado! Você já pode entrar.');
-    openAuth('login');
-  } else {
-    showToast('Link de confirmação inválido ou expirado. Solicite um novo abaixo.');
-    openAuth('login');
-  }
-
-  // Clean the query string so refreshing the page doesn't re-trigger the toast.
-  const url = new URL(window.location.href);
-  url.searchParams.delete('verified');
-  window.history.replaceState({}, '', url.pathname + url.hash);
-}
 
 function ensureGoogleIdentityReady(count = 0) {
   if (window.google?.accounts?.id) {

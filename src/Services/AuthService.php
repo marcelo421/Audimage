@@ -9,12 +9,8 @@ use App\Http\JsonResponder;
 
 class AuthService
 {
-    public function __construct(
-        private UserRepository $users,
-        private RateLimiter $rateLimiter,
-        private GoogleTokenVerifier $googleTokenVerifier,
-        private EmailVerificationService $emailVerification
-    ) {
+    public function __construct(private UserRepository $users, private RateLimiter $rateLimiter)
+    {
     }
 
     public function login(string $user, string $password): array
@@ -28,15 +24,6 @@ class AuthService
         $account = $this->users->findByUsernameOrEmail($user);
         if (!$account || !password_verify($password, $account['password_hash'])) {
             JsonResponder::respond(['ok' => false, 'message' => 'Usuário ou senha inválidos.'], 401);
-        }
-
-        if ($account['email_verified_at'] === null) {
-            JsonResponder::respond([
-                'ok' => false,
-                'message' => 'Confirme seu email antes de entrar. Verifique sua caixa de entrada.',
-                'requires_verification' => true,
-                'email' => $account['email'],
-            ], 403);
         }
 
         session_regenerate_id(true);
@@ -76,49 +63,44 @@ class AuthService
         $hash = password_hash($password, PASSWORD_DEFAULT);
         $userId = $this->users->createUser($username, $email, $hash);
 
-        // Registration does NOT log the user in. Email/password accounts
-        // start unverified (email_verified_at IS NULL) and login() blocks
-        // until the link is clicked — decided in favor of "block", not
-        // "allow with a warning", because an unconfirmed email means we
-        // haven't established the user actually controls that inbox, and
-        // silently allowing access just defers the check to whenever
-        // someone notices.
-        $this->emailVerification->sendVerificationEmail($userId, $email, $username);
-
-        return [
-            'ok' => true,
-            'requires_verification' => true,
-            'message' => 'Cadastro realizado! Confirme seu email para entrar.',
+        session_regenerate_id(true);
+        $_SESSION['user'] = [
+            'id' => $userId,
+            'username' => $username,
+            'email' => $email,
         ];
+
+        return ['ok' => true, 'user' => $_SESSION['user']];
     }
 
     public function googleLogin(string $credential): array
     {
-        $this->rateLimiter->enforce('google-login', $_SERVER['REMOTE_ADDR'] ?? 'unknown');
+        $this->rateLimiter->enforce('google-login', $this->clientIdentifier());
 
         if ($credential === '') {
             JsonResponder::respond(['ok' => false, 'message' => 'Credencial do Google ausente.'], 400);
         }
 
-        // Local RS256 verification against Google's published JWKS — no
-        // dependency on the debug-only `tokeninfo` endpoint, which is not
-        // meant for production traffic and has no availability guarantee.
-        $payload = $this->googleTokenVerifier->verify($credential);
-        if ($payload === null) {
+        $googleClientId = getenv('GOOGLE_CLIENT_ID');
+        if (!$googleClientId) {
+            error_log('[AUTH] GOOGLE_CLIENT_ID não configurado no ambiente.');
+            JsonResponder::respond(['ok' => false, 'message' => 'Login com Google não configurado.'], 500);
+        }
+
+        try {
+            $verifier = new GoogleTokenVerifier($googleClientId);
+            $payload = $verifier->verify($credential);
+        } catch (\Throwable $e) {
+            error_log('[AUTH] Falha na validação do token Google: ' . $e->getMessage());
             JsonResponder::respond(['ok' => false, 'message' => 'Token do Google inválido.'], 401);
         }
 
-        $emailVerified = $payload['email_verified'] ?? false;
-        if ($emailVerified !== true && $emailVerified !== 'true') {
-            JsonResponder::respond(['ok' => false, 'message' => 'Email do Google não verificado.'], 401);
-        }
-
-        $email = trim((string)($payload['email'] ?? ''));
-        if ($email === '' || !filter_var($email, FILTER_VALIDATE_EMAIL)) {
+        $email = trim($payload['email'] ?? '');
+        if ($email === '') {
             JsonResponder::respond(['ok' => false, 'message' => 'Email do Google não encontrado.'], 401);
         }
 
-        $displayName = trim((string)($payload['name'] ?? explode('@', $email)[0]));
+        $displayName = trim($payload['name'] ?? explode('@', $email)[0]);
         $username = preg_replace('/[^a-zA-Z0-9._-]/', '', $displayName);
         if ($username === '') {
             $username = 'usuario';
@@ -126,15 +108,9 @@ class AuthService
 
         $existingUser = $this->users->findByEmail($email);
         if ($existingUser) {
-            // Google itself just vouched for ownership of this email — at
-            // least as strong a proof as clicking our own confirmation
-            // link. If the account was stuck unverified (e.g. the user
-            // never clicked the original email), this unblocks it instead
-            // of leaving them stranded.
-            if ($existingUser['email_verified_at'] === null) {
-                $this->users->markEmailVerified((int)$existingUser['id']);
-            }
-
+            // Regenerate the session id on every successful authentication,
+            // including for returning users — otherwise a pre-auth session id
+            // could be fixated and reused post-login.
             session_regenerate_id(true);
             $_SESSION['user'] = [
                 'id' => (int)$existingUser['id'],
@@ -157,8 +133,6 @@ class AuthService
 
         $passwordHash = password_hash(bin2hex(random_bytes(16)), PASSWORD_DEFAULT);
         $userId = $this->users->createUser($username, $email, $passwordHash);
-        // No confirmation email needed — Google already verified this address.
-        $this->users->markEmailVerified($userId);
 
         session_regenerate_id(true);
         $_SESSION['user'] = [
@@ -168,5 +142,16 @@ class AuthService
         ];
 
         return ['ok' => true, 'user' => $_SESSION['user']];
+    }
+
+    private function clientIdentifier(): string
+    {
+        // Prefer a trusted proxy header only if explicitly configured; otherwise use REMOTE_ADDR.
+        $trustProxy = getenv('TRUST_PROXY_HEADERS') === 'true';
+        if ($trustProxy && !empty($_SERVER['HTTP_X_FORWARDED_FOR'])) {
+            $parts = explode(',', $_SERVER['HTTP_X_FORWARDED_FOR']);
+            return trim($parts[0]);
+        }
+        return $_SERVER['REMOTE_ADDR'] ?? 'unknown';
     }
 }

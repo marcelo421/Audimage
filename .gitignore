@@ -1,5 +1,12 @@
-# Ignore local rate limiter cache
+# Environment files with secrets — never commit these
+.env
+.env.local
+.env.*.local
+.env.production
+
+# Ignore local rate limiter file-based fallback
 api/.rate_limits.json
+storage/rate_limits/
 
 # Ignore PHPStorm / IDE files
 .idea/

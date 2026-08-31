@@ -4,10 +4,10 @@ declare(strict_types=1);
 
 namespace App\Exception;
 
-class ConflictException extends AuthException
+class ExternalServiceException extends AuthException
 {
     public function __construct(string $message)
     {
-        parent::__construct($message, 409);
+        parent::__construct($message, 500);
     }
 }

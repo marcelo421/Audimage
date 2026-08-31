@@ -4,10 +4,10 @@ declare(strict_types=1);
 
 namespace App\Exception;
 
-class ValidationException extends DomainException
+class ValidationException extends AuthException
 {
-    public function httpStatus(): int
+    public function __construct(string $message)
     {
-        return 400;
+        parent::__construct($message, 400);
     }
 }

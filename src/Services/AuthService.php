@@ -5,7 +5,10 @@ declare(strict_types=1);
 namespace App\Services;
 
 use App\Repository\UserRepository;
-use App\Http\JsonResponder;
+use App\Exception\ValidationException;
+use App\Exception\InvalidCredentialsException;
+use App\Exception\ConflictException;
+use App\Exception\ExternalServiceException;
 
 class AuthService
 {
@@ -13,17 +16,17 @@ class AuthService
     {
     }
 
-    public function login(string $user, string $password): array
+    public function login(string $user, string $password): AuthResult
     {
         $this->rateLimiter->enforce('login', $user !== '' ? $user : 'empty');
 
         if ($user === '' || $password === '') {
-            JsonResponder::respond(['ok' => false, 'message' => 'Preencha todos os campos.'], 400);
+            throw new ValidationException('Preencha todos os campos.');
         }
 
         $account = $this->users->findByUsernameOrEmail($user);
         if (!$account || !password_verify($password, $account['password_hash'])) {
-            JsonResponder::respond(['ok' => false, 'message' => 'Usuário ou senha inválidos.'], 401);
+            throw new InvalidCredentialsException('Usuário ou senha inválidos.');
         }
 
         session_regenerate_id(true);
@@ -33,31 +36,31 @@ class AuthService
             'email' => $account['email'],
         ];
 
-        return ['ok' => true, 'user' => $_SESSION['user']];
+        return new AuthResult($_SESSION['user']);
     }
 
-    public function register(string $username, string $email, string $password): array
+    public function register(string $username, string $email, string $password): AuthResult
     {
         $this->rateLimiter->enforce('register', $email !== '' ? $email : 'empty');
 
         if ($username === '' || $email === '' || $password === '') {
-            JsonResponder::respond(['ok' => false, 'message' => 'Preencha todos os campos.'], 400);
+            throw new ValidationException('Preencha todos os campos.');
         }
 
         if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
-            JsonResponder::respond(['ok' => false, 'message' => 'Email inválido.'], 400);
+            throw new ValidationException('Email inválido.');
         }
 
         if (strlen($password) < 8 || !preg_match('/[A-Za-z]/', $password) || !preg_match('/\d/', $password)) {
-            JsonResponder::respond(['ok' => false, 'message' => 'A senha precisa ter pelo menos 8 caracteres, incluindo letras e números.'], 400);
+            throw new ValidationException('A senha precisa ter pelo menos 8 caracteres, incluindo letras e números.');
         }
 
         if ($this->users->existsByUsernameOrEmail($username, $email)) {
             $existing = $this->users->findByUsernameOrEmail($username) ?: $this->users->findByUsernameOrEmail($email);
             if ($existing && $existing['username'] === $username) {
-                JsonResponder::respond(['ok' => false, 'message' => 'Esse nome de usuário já existe.'], 409);
+                throw new ConflictException('Esse nome de usuário já existe.');
             }
-            JsonResponder::respond(['ok' => false, 'message' => 'Esse email já está cadastrado.'], 409);
+            throw new ConflictException('Esse email já está cadastrado.');
         }
 
         $hash = password_hash($password, PASSWORD_DEFAULT);
@@ -70,21 +73,21 @@ class AuthService
             'email' => $email,
         ];
 
-        return ['ok' => true, 'user' => $_SESSION['user']];
+        return new AuthResult($_SESSION['user']);
     }
 
-    public function googleLogin(string $credential): array
+    public function googleLogin(string $credential): AuthResult
     {
         $this->rateLimiter->enforce('google-login', $this->clientIdentifier());
 
         if ($credential === '') {
-            JsonResponder::respond(['ok' => false, 'message' => 'Credencial do Google ausente.'], 400);
+            throw new ValidationException('Credencial do Google ausente.');
         }
 
         $googleClientId = getenv('GOOGLE_CLIENT_ID');
         if (!$googleClientId) {
             error_log('[AUTH] GOOGLE_CLIENT_ID não configurado no ambiente.');
-            JsonResponder::respond(['ok' => false, 'message' => 'Login com Google não configurado.'], 500);
+            throw new ExternalServiceException('Login com Google não configurado.');
         }
 
         try {
@@ -92,12 +95,12 @@ class AuthService
             $payload = $verifier->verify($credential);
         } catch (\Throwable $e) {
             error_log('[AUTH] Falha na validação do token Google: ' . $e->getMessage());
-            JsonResponder::respond(['ok' => false, 'message' => 'Token do Google inválido.'], 401);
+            throw new InvalidCredentialsException('Token do Google inválido.');
         }
 
         $email = trim($payload['email'] ?? '');
         if ($email === '') {
-            JsonResponder::respond(['ok' => false, 'message' => 'Email do Google não encontrado.'], 401);
+            throw new InvalidCredentialsException('Email do Google não encontrado.');
         }
 
         $displayName = trim($payload['name'] ?? explode('@', $email)[0]);
@@ -117,7 +120,7 @@ class AuthService
                 'username' => $existingUser['username'],
                 'email' => $existingUser['email'],
             ];
-            return ['ok' => true, 'user' => $_SESSION['user']];
+            return new AuthResult($_SESSION['user']);
         }
 
         $baseUsername = $username;
@@ -141,12 +144,11 @@ class AuthService
             'email' => $email,
         ];
 
-        return ['ok' => true, 'user' => $_SESSION['user']];
+        return new AuthResult($_SESSION['user']);
     }
 
     private function clientIdentifier(): string
     {
-        // Prefer a trusted proxy header only if explicitly configured; otherwise use REMOTE_ADDR.
         $trustProxy = getenv('TRUST_PROXY_HEADERS') === 'true';
         if ($trustProxy && !empty($_SERVER['HTTP_X_FORWARDED_FOR'])) {
             $parts = explode(',', $_SERVER['HTTP_X_FORWARDED_FOR']);

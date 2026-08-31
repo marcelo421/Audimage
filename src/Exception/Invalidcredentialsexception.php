@@ -4,10 +4,10 @@ declare(strict_types=1);
 
 namespace App\Exception;
 
-class InvalidCredentialsException extends DomainException
+class InvalidCredentialsException extends AuthException
 {
-    public function httpStatus(): int
+    public function __construct(string $message)
     {
-        return 401;
+        parent::__construct($message, 401);
     }
 }

@@ -21,6 +21,15 @@ try {
         trim($data['email'] ?? ''),
         $data['pass'] ?? ''
     );
+    // Send verification email (best-effort). Do not fail registration on mail errors.
+    try {
+        if (isset($emailVerificationService) && $result !== null) {
+            $user = $result->user();
+            @$emailVerificationService->sendVerificationEmail((int)$user['id'], (string)$user['email'], (string)$user['username']);
+        }
+    } catch (\Throwable $e) {
+        error_log('[REGISTER] Failed to send verification email: ' . $e->getMessage());
+    }
     JsonResponder::respond($result->toArray());
 } catch (TooManyRequestsException $e) {
     JsonResponder::respond(['ok' => false, 'message' => $e->getMessage()], 429);

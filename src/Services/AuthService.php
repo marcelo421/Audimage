@@ -9,6 +9,7 @@ use App\Exception\ValidationException;
 use App\Exception\InvalidCredentialsException;
 use App\Exception\ConflictException;
 use App\Exception\ExternalServiceException;
+use App\Domain\AuthResult;
 
 class AuthService
 {

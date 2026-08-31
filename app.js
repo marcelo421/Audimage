@@ -130,6 +130,19 @@ async function doRegister() {
   }
 }
 
+function togglePassword(inputId, btnId) {
+  const inp = document.getElementById(inputId);
+  const btn = document.getElementById(btnId);
+  if (!inp) return;
+  if (inp.type === 'password') {
+    inp.type = 'text';
+    if (btn) { btn.textContent = '🙈'; btn.setAttribute('aria-pressed','true'); }
+  } else {
+    inp.type = 'password';
+    if (btn) { btn.textContent = '👁️'; btn.setAttribute('aria-pressed','false'); }
+  }
+}
+
 function loginGoogle() {
   if (!googleInitialized || !window.google?.accounts?.id) {
     showToast('Aguardando o login Google...');

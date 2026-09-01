@@ -72,20 +72,92 @@ function closeAuth() {
 }
 
 function switchAuth(view) {
-  document.getElementById('loginView').style.display = view === 'login' ? 'block' : 'none';
-  document.getElementById('registerView').style.display = view === 'register' ? 'block' : 'none';
+  const views = ['loginView', 'registerView', 'forgotView', 'resetView'];
+  views.forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.style.display = id === view + 'View' ? 'block' : 'none';
+  });
   clearErrors();
 }
 
 function clearErrors() {
-  document.getElementById('loginError').classList.remove('show');
-  document.getElementById('registerError').classList.remove('show');
+  const errorIds = ['loginError', 'registerError', 'forgotError', 'resetError'];
+  errorIds.forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.classList.remove('show');
+  });
 }
 
 function showError(id, msg) {
   const el = document.getElementById(id);
+  if (!el) return;
   el.textContent = msg;
   el.classList.add('show');
+}
+
+async function doForgotPassword() {
+  const email = document.getElementById('forgotEmail').value.trim();
+  if (!email) { showError('forgotError', 'Informe seu email.'); return; }
+
+  try {
+    const { data } = await apiPost('api/forgot-password.php', { email });
+    if (!data.ok) {
+      showError('forgotError', data.message || 'Não foi possível enviar o link.');
+      return;
+    }
+
+    document.getElementById('forgotEmail').value = '';
+    clearErrors();
+    showToast('Se o email estiver cadastrado, enviamos o link de redefinição.');
+    switchAuth('login');
+  } catch (error) {
+    showError('forgotError', error.message);
+  }
+}
+
+async function doResetPassword() {
+  const token = new URLSearchParams(window.location.search).get('reset_token') || '';
+  const password = document.getElementById('resetPass').value;
+  const confirm = document.getElementById('resetPassConfirm').value;
+
+  if (!token) {
+    showError('resetError', 'Token de redefinição ausente.');
+    return;
+  }
+
+  if (!password || !confirm) {
+    showError('resetError', 'Preencha a nova senha e a confirmação.');
+    return;
+  }
+
+  if (password.length < 8 || !/[A-Za-z]/.test(password) || !/\d/.test(password)) {
+    showError('resetError', 'A senha precisa ter pelo menos 8 caracteres, incluindo letras e números.');
+    return;
+  }
+
+  if (password !== confirm) {
+    showError('resetError', 'As senhas não conferem.');
+    return;
+  }
+
+  try {
+    const { data } = await apiPost('api/reset-password.php', { token, password });
+    if (!data.ok) {
+      showError('resetError', data.message || 'Não foi possível redefinir a senha.');
+      return;
+    }
+
+    document.getElementById('resetPass').value = '';
+    document.getElementById('resetPassConfirm').value = '';
+    clearErrors();
+    showToast(data.message || 'Senha redefinida com sucesso.');
+    const url = new URL(window.location.href);
+    url.searchParams.delete('reset_token');
+    window.history.replaceState({}, '', url);
+    switchAuth('login');
+  } catch (error) {
+    showError('resetError', error.message);
+  }
 }
 
 async function doLogin() {
@@ -124,7 +196,13 @@ async function doRegister() {
       showError('registerError', data.message || 'Falha ao cadastrar.');
       return;
     }
-    loginAs(data.user);
+
+    document.getElementById('regUser').value = '';
+    document.getElementById('regEmail').value = '';
+    document.getElementById('regPass').value = '';
+    clearErrors();
+    closeAuth();
+    showToast('Cadastro realizado! Verifique seu e-mail para ativar a conta.');
   } catch (error) {
     showError('registerError', error.message);
   }
@@ -226,6 +304,23 @@ document.getElementById('authOverlay').addEventListener('click', function(e) {
 ['regUser','regEmail','regPass'].forEach(id => {
   document.getElementById(id).addEventListener('keydown', e => { if (e.key === 'Enter') doRegister(); });
 });
+['forgotEmail'].forEach(id => {
+  document.getElementById(id).addEventListener('keydown', e => { if (e.key === 'Enter') doForgotPassword(); });
+});
+['resetPass','resetPassConfirm'].forEach(id => {
+  document.getElementById(id).addEventListener('keydown', e => { if (e.key === 'Enter') doResetPassword(); });
+});
+
+const urlParams = new URLSearchParams(window.location.search);
+if (urlParams.has('reset_token')) {
+  if (document.readyState === 'loading') {
+    window.addEventListener('DOMContentLoaded', () => {
+      openAuth('reset');
+    });
+  } else {
+    openAuth('reset');
+  }
+}
 
 // ===== SCREEN NAV =====
 function showScreen(id) {

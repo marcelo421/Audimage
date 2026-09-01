@@ -6,7 +6,7 @@ namespace App\Repository;
 
 use PDO;
 
-class UserRepository implements UserEmailVerificationLookupInterface
+class UserRepository implements UserPasswordResetLookupInterface
 {
     public function __construct(private PDO $pdo)
     {
@@ -51,5 +51,11 @@ class UserRepository implements UserEmailVerificationLookupInterface
     {
         $stmt = $this->pdo->prepare('UPDATE users SET email_verified_at = NOW() WHERE id = :id');
         $stmt->execute([':id' => $userId]);
+    }
+
+    public function updatePasswordHash(int $userId, string $passwordHash): void
+    {
+        $stmt = $this->pdo->prepare('UPDATE users SET password_hash = :password_hash WHERE id = :id');
+        $stmt->execute([':password_hash' => $passwordHash, ':id' => $userId]);
     }
 }

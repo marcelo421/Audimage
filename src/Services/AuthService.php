@@ -30,6 +30,10 @@ class AuthService
             throw new InvalidCredentialsException('Usuário ou senha inválidos.');
         }
 
+        if (($account['email_verified_at'] ?? null) === null || $account['email_verified_at'] === '') {
+            throw new InvalidCredentialsException('Confirme seu email antes de entrar.');
+        }
+
         session_regenerate_id(true);
         $_SESSION['user'] = [
             'id' => (int)$account['id'],
@@ -67,14 +71,11 @@ class AuthService
         $hash = password_hash($password, PASSWORD_DEFAULT);
         $userId = $this->users->createUser($username, $email, $hash);
 
-        session_regenerate_id(true);
-        $_SESSION['user'] = [
+        return new AuthResult([
             'id' => $userId,
             'username' => $username,
             'email' => $email,
-        ];
-
-        return new AuthResult($_SESSION['user']);
+        ]);
     }
 
     public function googleLogin(string $credential): AuthResult
@@ -112,6 +113,10 @@ class AuthService
 
         $existingUser = $this->users->findByEmail($email);
         if ($existingUser) {
+            if (($existingUser['email_verified_at'] ?? null) === null || $existingUser['email_verified_at'] === '') {
+                $this->users->markEmailVerified((int)$existingUser['id']);
+            }
+
             // Regenerate the session id on every successful authentication,
             // including for returning users — otherwise a pre-auth session id
             // could be fixated and reused post-login.
@@ -137,6 +142,7 @@ class AuthService
 
         $passwordHash = password_hash(bin2hex(random_bytes(16)), PASSWORD_DEFAULT);
         $userId = $this->users->createUser($username, $email, $passwordHash);
+        $this->users->markEmailVerified($userId);
 
         session_regenerate_id(true);
         $_SESSION['user'] = [

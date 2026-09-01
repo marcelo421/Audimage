@@ -39,16 +39,45 @@ Depois rode as migrations (cria tabelas users, presets, etc.):
 composer migrate
 
 Passo 4 - Configure as credenciais via variáveis de ambiente
-A conexão é feita por src/Database/Connection.php, que lê as seguintes variáveis
-de ambiente (com valores padrão para XAMPP local entre parênteses):
-- DB_HOST (127.0.0.1)
-- DB_NAME (audimage)
-- DB_USER (root)
-- DB_PASS ('')
-- GOOGLE_CLIENT_ID (obrigatório para login com Google — sem fallback embutido)
+Crie um arquivo .env na raiz do projeto (não commitado — veja .gitignore) com as
+variáveis abaixo. Para envio real de e-mails, o projeto usa Resend por padrão porque é
+mais simples de configurar do que SMTP:
 
-Defina-as no seu .env local (nunca commitado — veja .gitignore) ou nas variáveis
-de ambiente do seu servidor web.
+```env
+DB_HOST=127.0.0.1
+DB_NAME=audimage
+DB_USER=root
+DB_PASS=
+
+GOOGLE_CLIENT_ID=SEU_GOOGLE_CLIENT_ID
+
+MAIL_DRIVER=resend
+RESEND_API_KEY=sua_chave_resend
+MAIL_FROM=no-reply@audimage.app
+MAIL_FROM_NAME=AUDIMAGE
+APP_URL=http://localhost/audimage
+```
+
+Variáveis importantes:
+- DB_HOST, DB_NAME, DB_USER, DB_PASS: conexão com o MySQL
+- GOOGLE_CLIENT_ID: obrigatório para login com Google
+- MAIL_DRIVER: use `resend` para envio real; `log` apenas para desenvolvimento local
+- RESEND_API_KEY: chave da API do Resend
+- MAIL_FROM: endereço do remetente, geralmente um domínio verificado no Resend
+- MAIL_FROM_NAME: nome exibido no remetente
+- APP_URL: URL base do site, usada para montar o link de confirmação de e-mail
+
+Se `MAIL_DRIVER=log`, o e-mail não é enviado de verdade; ele é gravado em um arquivo
+temporário do PHP. No Windows/XAMPP isso normalmente fica em:
+- %TEMP%\audimage_mail.log
+- Exemplo real no ambiente atual: C:\Users\MARCEL~1\AppData\Local\Temp\audimage_mail.log
+
+Para usar Resend:
+1. Crie uma conta em https://resend.com
+2. Gere uma chave de API
+3. Verifique seu domínio (por exemplo: audimage.app ou um subdomínio)
+4. Cole a chave em `RESEND_API_KEY`
+5. Use um endereço válido em `MAIL_FROM` (por exemplo: no-reply@seu-dominio.com)
 
 Passo 5 - Acesse o projeto no navegador
 Use:
@@ -80,14 +109,53 @@ Se o app não abrir corretamente, verifique:
 - o projeto está sendo aberto via localhost e não via file://
 - as variáveis de ambiente DB_* estão corretas
 
-8) RATE LIMITING
+8) LOCALIZANDO E TESTANDO EMAILS (MODO LOG)
+--------------------------------------------
+Quando MAIL_DRIVER=log, todos os emails enviados (verificação de email, reset de senha, etc.) 
+são salvos em um arquivo de log em vez de serem enviados de verdade. Isso é útil para testes locais.
+
+Localização do arquivo:
+- Windows (XAMPP): C:\Users\SEU_USUARIO\AppData\Local\Temp\audimage_mail.log
+- Em variável de ambiente: %TEMP%\audimage_mail.log
+
+Como acessar:
+
+1) Abrir no VS Code:
+   Ctrl+K Ctrl+O → Cole o caminho: %TEMP%\audimage_mail.log
+
+2) Via PowerShell - Ver últimos 50 emails:
+   Get-Content "$env:TEMP\audimage_mail.log" -Tail 50
+
+3) Via PowerShell - Procurar por email específico:
+   Select-String -Path "$env:TEMP\audimage_mail.log" -Pattern "seu@email.com" -Context 5
+
+4) Via PowerShell - Ver todos os emails (apenas remetentes):
+   Select-String -Path "$env:TEMP\audimage_mail.log" -Pattern "^To:"
+
+5) Via PowerShell - Procurar por links de reset de senha:
+   Select-String -Path "$env:TEMP\audimage_mail.log" -Pattern "reset_token" -Context 3
+
+6) Via PowerShell - Procurar por links de verificação de email:
+   Select-String -Path "$env:TEMP\audimage_mail.log" -Pattern "verify-email.php" -Context 3
+
+Formato do arquivo:
+- Cada email é separado por ==== DATA HORA ====
+- Contém: To (destinatário), Subject (assunto), e o corpo HTML do email
+- Links de ação (verificar email, redefinir senha) estão dentro do HTML
+
+Exemplo de uso:
+Após se cadastrar com um novo email, execute:
+  Select-String -Path "$env:TEMP\audimage_mail.log" -Pattern "novo@email.com" -Context 10
+Procure pelo link com token (é a URL que você deve clicar para confirmar o cadastro).
+
+9) RATE LIMITING
 -----------------
 O RateLimiter usa Redis por padrão. Se o Redis estiver indisponível:
 - por padrão, cai em modo degradado com fallback em arquivo (mesmo limite aplicado)
 - se RATE_LIMIT_ALLOW_FILE_FALLBACK=false, o serviço nega novas tentativas (fail-closed)
   em vez de permitir requisições ilimitadas.
 
-9) LOGIN COM GOOGLE
+10) LOGIN COM GOOGLE
 ------------------
 O login com Google valida o ID token localmente contra as chaves públicas (JWKS)
 do Google — não depende mais do endpoint de debug tokeninfo.
@@ -95,7 +163,7 @@ do Google — não depende mais do endpoint de debug tokeninfo.
 do Google Cloud Console; não há mais valor padrão embutido no código.
 Se o botão não funcionar, verifique o domínio/host autorizado no Google Cloud Console.
 
-10) RESUMO
+11) RESUMO
 ---------
 O projeto já está preparado para rodar localmente com PHP + MySQL, especialmente em XAMPP, desde que:
 - o MySQL esteja ativo

@@ -67,10 +67,25 @@ final class AuthServiceTest extends TestCase
             'username' => 'alice',
             'email' => 'alice@example.com',
             'password_hash' => password_hash('correct-horse', PASSWORD_DEFAULT),
+            'email_verified_at' => '2026-01-01 00:00:00',
         ]);
 
         $this->expectException(InvalidCredentialsException::class);
         $this->auth->login('alice', 'wrong-password');
+    }
+
+    public function testLoginRejectsUnverifiedEmail(): void
+    {
+        $this->users->method('findByUsernameOrEmail')->willReturn([
+            'id' => 1,
+            'username' => 'alice',
+            'email' => 'alice@example.com',
+            'password_hash' => password_hash('correct-horse', PASSWORD_DEFAULT),
+            'email_verified_at' => null,
+        ]);
+
+        $this->expectException(InvalidCredentialsException::class);
+        $this->auth->login('alice', 'correct-horse');
     }
 
     public function testLoginSucceedsAndPopulatesSession(): void
@@ -80,6 +95,7 @@ final class AuthServiceTest extends TestCase
             'username' => 'alice',
             'email' => 'alice@example.com',
             'password_hash' => password_hash('correct-horse', PASSWORD_DEFAULT),
+            'email_verified_at' => '2026-01-01 00:00:00',
         ]);
 
         $result = $this->auth->login('alice', 'correct-horse');
@@ -95,6 +111,17 @@ final class AuthServiceTest extends TestCase
 
         $this->expectException(ValidationException::class);
         $this->auth->register('bob', 'bob@example.com', 'short');
+    }
+
+    public function testRegisterDoesNotCreateAuthenticatedSessionBeforeEmailVerification(): void
+    {
+        $this->users->method('existsByUsernameOrEmail')->willReturn(false);
+        $this->users->method('createUser')->willReturn(42);
+
+        $result = $this->auth->register('bob', 'bob@example.com', 'password123');
+
+        $this->assertSame(42, $result->user()['id']);
+        $this->assertArrayNotHasKey('user', $_SESSION);
     }
 
     public function testRegisterRejectsInvalidEmail(): void

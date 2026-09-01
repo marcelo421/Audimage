@@ -3,6 +3,8 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/../autoload.php';
 
+loadDotEnv(__DIR__ . '/../.env');
+
 use App\Http\SecurityHeaders;
 
 SecurityHeaders::apply();
@@ -20,4 +22,39 @@ if ((!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') || (isset($_SERVE
 
 if (session_status() !== PHP_SESSION_ACTIVE) {
     session_start();
+}
+
+function loadDotEnv(string $envFile): void
+{
+    if (!is_file($envFile)) {
+        return;
+    }
+
+    $lines = file($envFile, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
+    if ($lines === false) {
+        return;
+    }
+
+    foreach ($lines as $line) {
+        $trimmed = trim($line);
+        if ($trimmed === '' || str_starts_with($trimmed, '#')) {
+            continue;
+        }
+
+        [$key, $value] = array_pad(explode('=', $trimmed, 2), 2, '');
+        $key = trim($key);
+        $value = trim($value);
+
+        if ($key === '') {
+            continue;
+        }
+
+        if (getenv($key) === false) {
+            $value = preg_replace('/^"(.*)"$/', '$1', $value);
+            $value = preg_replace("/^'(.*)'$/", '$1', $value);
+            putenv($key . '=' . $value);
+            $_ENV[$key] = $value;
+            $_SERVER[$key] = $value;
+        }
+    }
 }

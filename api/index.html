@@ -1,0 +1,348 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AUDIMAGE</title>
+<link href="https://fonts.googleapis.com/css2?family=Nunito:wght@300;400;500;600;700;800&family=Sora:wght@300;400;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<!-- ===== PALETTE PICKER (ALL PAGES) ===== -->
+<div id="palettePicker">
+  <div class="palette-dot active" data-palette="default" style="background:linear-gradient(135deg,#6b21a8,#a855f7)" title="Roxo"></div>
+  <div class="palette-dot" data-palette="petroleo" style="background:linear-gradient(135deg,#0d6050,#6ee7d4)" title="Petróleo"></div>
+  <div class="palette-dot" data-palette="sage" style="background:linear-gradient(135deg,#4a7a45,#d4e8a0)" title="Verde Sálvia"></div>
+  <div class="palette-dot" data-palette="lilac" style="background:linear-gradient(135deg,#6b4080,#f0e6a0)" title="Lilás"></div>
+  <div class="palette-dot" data-palette="royal" style="background:linear-gradient(135deg,#2a50d0,#8ab4f8)" title="Azul Royal"></div>
+  <div class="palette-dot" data-palette="forest" style="background:linear-gradient(135deg,#1a5530,#f0e8a0)" title="Floresta"></div>
+  <div class="palette-dot" data-palette="mist" style="background:linear-gradient(135deg,#606880,#c8d8e8)" title="Névoa"></div>
+  <div class="palette-dot" data-palette="sunset" style="background:linear-gradient(135deg,#c04060,#ff9a6c)" title="Pôr do Sol"></div>
+</div>
+
+<!-- ===== LANDING PAGE ===== -->
+<div id="screen-landing" class="screen active">
+  <nav class="landing-nav">
+    <div class="landing-logo-icon">A</div>
+    <div class="landing-nav-buttons">
+      <button class="btn-glass" onclick="openAuth('login')">Login</button>
+      <button class="btn-glass" onclick="openAuth('register')">Cadastre-se</button>
+    </div>
+  </nav>
+
+  <div class="landing-hero">
+    <h1 class="landing-title">AUDIMAGE<span class="music-note">♪</span></h1>
+    <p class="landing-sub">sinta a música com os olhos.</p>
+    <div class="landing-btns">
+      <button class="btn-glass-primary" onclick="goToApp()">Começar grátis</button>
+      <button class="btn-glass-outline" onclick="showPlans()">Ver planos</button>
+    </div>
+  </div>
+
+  <div class="landing-footer">© 2026 Audimage · Acessibilidade para todos</div>
+</div>
+
+<!-- ===== PLANS PAGE ===== -->
+<div id="screen-plans" class="screen">
+  <nav class="plans-nav">
+    <div class="landing-logo-icon">A</div>
+    <button class="plans-back-btn" onclick="showLanding()">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="15 18 9 12 15 6"/></svg>
+      Voltar
+    </button>
+  </nav>
+
+  <h2 class="plans-title">PLANOS<span class="note">♪</span></h2>
+  <div class="plans-grid">
+    <div class="plan-card">
+      <div class="plan-name">Free</div>
+      <div class="plan-divider"></div>
+      <div class="plan-price">R$0<span>/mês</span></div>
+      <ul class="plan-features">
+        <li>Visualizador básico</li>
+        <li>8 formas visuais</li>
+        <li>3 paletas de cores</li>
+        <li>Biblioteca com 5 presets</li>
+      </ul>
+      <button class="plan-btn" onclick="openAuth('register')">Começar grátis</button>
+    </div>
+
+    <div class="plan-card featured">
+      <div class="plan-badge">Popular</div>
+      <div class="plan-name">Mensal</div>
+      <div class="plan-divider"></div>
+      <div class="plan-price">R$19<span>/mês</span></div>
+      <ul class="plan-features">
+        <li>Todas as formas visuais</li>
+        <li>Todas as paletas</li>
+        <li>Presets ilimitados</li>
+        <li>Exportar visualizações</li>
+        <li>Sem marca d'água</li>
+      </ul>
+      <button class="plan-btn featured-btn" onclick="openAuth('register')">Assinar agora</button>
+    </div>
+
+    <div class="plan-card">
+      <div class="plan-name">Anual</div>
+      <div class="plan-divider"></div>
+      <div class="plan-price">R$149<span>/ano</span></div>
+      <ul class="plan-features">
+        <li>Tudo do plano Mensal</li>
+        <li>2 meses grátis</li>
+        <li>Acesso antecipado</li>
+        <li>Suporte prioritário</li>
+      </ul>
+      <button class="plan-btn" onclick="openAuth('register')">Melhor custo-benefício</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===== MAIN APP ===== -->
+<div id="screen-app" class="screen">
+  <header>
+    <div class="header-left">
+      <div class="header-logo-icon">A</div>
+      <span class="app-title">AUDIMAGE</span>
+    </div>
+    <div class="header-right">
+      <button class="hdr-btn" id="btnFullscreen" title="Tela cheia" onclick="toggleFullscreen()">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/>
+          <line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/>
+        </svg>
+      </button>
+      <button class="hdr-btn" id="btnLib" title="Biblioteca" onclick="toggleLib()">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/>
+        </svg>
+      </button>
+      <button class="hdr-btn" id="btnSettings" title="Personalizar" onclick="toggleSettings()">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="12" cy="12" r="3"/>
+          <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+        </svg>
+      </button>
+      <div class="user-chip" id="userChip" onclick="goToLanding()" title="Sair">
+        <div class="user-avatar" id="userAvatarChip">G</div>
+        <span class="user-name" id="userNameChip">Guest</span>
+      </div>
+    </div>
+  </header>
+
+  <div class="canvas-wrap">
+    <canvas id="vizCanvas"></canvas>
+    <div class="mic-wrap">
+      <button id="micBtn" onclick="toggleMic()">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="17" height="17">
+          <path d="M12 2a3 3 0 0 1 3 3v7a3 3 0 0 1-6 0V5a3 3 0 0 1 3-3z"/>
+          <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+          <line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/>
+        </svg>
+        Ativar microfone
+      </button>
+    </div>
+  </div>
+
+  <!-- SETTINGS PANEL -->
+  <div id="settingsPanel" class="side-panel">
+    <div class="panel-title">
+      Personalizar
+      <button class="panel-close" onclick="toggleSettings()">✕</button>
+    </div>
+
+    <div class="panel-section">
+      <div class="section-label">Forma visual</div>
+      <div class="shape-grid" id="shapeGrid">
+        <button class="shape-btn active" data-shape="barras">Barras</button>
+        <button class="shape-btn" data-shape="onda">Onda</button>
+        <button class="shape-btn" data-shape="circulos">Círculos</button>
+        <button class="shape-btn" data-shape="espelho">Espelho</button>
+        <button class="shape-btn" data-shape="pontos">Pontos</button>
+        <button class="shape-btn" data-shape="radial">Radial</button>
+        <button class="shape-btn" data-shape="poligonos">Polígonos</button>
+        <button class="shape-btn" data-shape="linha">Linha</button>
+      </div>
+    </div>
+
+    <div class="panel-section">
+      <div class="section-label">Modo de cor</div>
+      <div class="color-mode-row">
+        <button class="color-pill gradient active" id="pillGradient" onclick="setColorMode('gradient')" title="Espectro de cores"></button>
+        <button class="color-pill solid" id="pillSolid" onclick="setColorMode('solid')" title="Cor do tema"></button>
+      </div>
+    </div>
+
+    <div class="panel-section">
+      <div class="section-label">Intensidade</div>
+      <div class="intensity-row">
+        <span style="font-size:12px;color:var(--text-muted)">Nível</span>
+        <span class="intensity-val" id="intensityVal">100%</span>
+      </div>
+      <input type="range" id="intensitySlider" min="50" max="400" value="100" oninput="setIntensity(this.value)">
+      <div class="slider-labels"><span>Suave</span><span>Forte</span></div>
+    </div>
+
+    <div class="panel-section">
+      <div class="section-label">Tema visual</div>
+      <div class="theme-grid" id="themeGrid">
+        <div class="theme-swatch active" data-theme="roxo" style="background:linear-gradient(135deg,#6b21a8,#a855f7)" title="Roxo"></div>
+        <div class="theme-swatch" data-theme="petróleo" style="background:linear-gradient(135deg,#0d6050,#14b8a6)" title="Petróleo"></div>
+        <div class="theme-swatch" data-theme="verde" style="background:linear-gradient(135deg,#14532d,#4ade80)" title="Verde"></div>
+        <div class="theme-swatch" data-theme="preto" style="background:linear-gradient(135deg,#000,#1a1a2e)" title="Preto/Neon"></div>
+        <div class="theme-swatch" data-theme="cinza" style="background:linear-gradient(135deg,#374151,#9ca3af)" title="Cinza"></div>
+        <div class="theme-swatch" data-theme="violeta" style="background:linear-gradient(135deg,#1e003d,#c084fc)" title="Violeta"></div>
+        <div class="theme-swatch" data-theme="rosa" style="background:linear-gradient(135deg,#500724,#fb7185)" title="Rosa"></div>
+        <div class="theme-swatch" data-theme="ouro" style="background:linear-gradient(135deg,#1c1208,#f59e0b)" title="Ouro"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- LIBRARY PANEL -->
+  <div id="libPanel" class="side-panel" style="z-index:31;">
+    <div class="panel-title">
+      Biblioteca
+      <button class="panel-close" onclick="toggleLib()">✕</button>
+    </div>
+    <button class="lib-save-btn" onclick="savePreset()">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+      Salvar configuração atual
+    </button>
+    <div id="presetList"></div>
+  </div>
+</div>
+
+<!-- ===== AUTH MODAL ===== -->
+<div id="authOverlay" class="auth-overlay">
+  <div class="auth-modal">
+    <button class="auth-close" onclick="closeAuth()">✕</button>
+
+    <div class="auth-logo">
+      <div class="auth-logo-icon">A</div>
+      <span class="auth-logo-text">AUDIMAGE</span>
+    </div>
+
+    <!-- LOGIN VIEW -->
+    <div id="loginView">
+      <div class="auth-title">Bem-vindo de volta</div>
+      <div class="auth-subtitle">Entre na sua conta para continuar</div>
+
+      <div class="auth-error" id="loginError"></div>
+
+      <div class="auth-field">
+        <label class="auth-label">Email ou usuário</label>
+        <input class="auth-input" id="loginUser" type="text" placeholder="seu@email.com" autocomplete="username">
+      </div>
+      <div class="auth-field">
+        <label class="auth-label">Senha</label>
+        <input class="auth-input" id="loginPass" type="password" placeholder="••••••••" autocomplete="current-password">
+      </div>
+
+      <label class="auth-remember">
+        <input type="checkbox" id="rememberMe"> <span>Lembre-se de mim</span>
+      </label>
+
+      <button class="auth-btn-main" onclick="doLogin()">Entrar</button>
+
+      <div class="auth-divider"><span>ou</span></div>
+
+      <button class="auth-btn-google" onclick="loginGoogle()">
+        <div class="google-icon"></div>
+        Entrar com Google
+      </button>
+
+      <div class="auth-switch">
+        <a onclick="switchAuth('forgot')">Esqueceu a senha?</a>
+      </div>
+      <div class="auth-switch">
+        Não tem conta? <a onclick="switchAuth('register')">Cadastre-se grátis</a>
+      </div>
+    </div>
+
+    <!-- REGISTER VIEW -->
+    <div id="registerView" style="display:none">
+      <div class="auth-title">Criar conta</div>
+      <div class="auth-subtitle">Comece a visualizar a música hoje</div>
+
+      <div class="auth-error" id="registerError"></div>
+
+      <div class="auth-field">
+        <label class="auth-label">Nome de usuário</label>
+        <input class="auth-input" id="regUser" type="text" placeholder="seunome" autocomplete="username">
+      </div>
+      <div class="auth-field">
+        <label class="auth-label">Email</label>
+        <input class="auth-input" id="regEmail" type="email" placeholder="seu@email.com" autocomplete="email">
+      </div>
+      <div class="auth-field">
+        <label class="auth-label">Senha</label>
+        <div style="position:relative;display:flex;align-items:center;">
+          <input class="auth-input" id="regPass" type="password" placeholder="mínimo 8 caracteres, com letra e número" autocomplete="new-password" style="flex:1;padding-right:40px;">
+          <button id="regPassToggle" type="button" onclick="togglePassword('regPass','regPassToggle')" aria-label="Mostrar senha" style="position:absolute;right:8px;background:transparent;border:none;cursor:pointer;color:var(--text-muted);">👁️</button>
+        </div>
+      </div>
+
+      <button class="auth-btn-main" onclick="doRegister()">Criar conta</button>
+
+      <div class="auth-divider"><span>ou</span></div>
+
+      <button class="auth-btn-google" onclick="loginGoogle()">
+        <div class="google-icon"></div>
+        Cadastrar com Google
+      </button>
+
+      <div class="auth-switch">
+        Já tem conta? <a onclick="switchAuth('login')">Fazer login</a>
+      </div>
+    </div>
+
+    <!-- FORGOT PASSWORD VIEW -->
+    <div id="forgotView" style="display:none">
+      <div class="auth-title">Esqueceu a senha?</div>
+      <div class="auth-subtitle">Enviaremos um link de redefinição para o seu email</div>
+
+      <div class="auth-error" id="forgotError"></div>
+
+      <div class="auth-field">
+        <label class="auth-label">Email</label>
+        <input class="auth-input" id="forgotEmail" type="email" placeholder="seu@email.com" autocomplete="email">
+      </div>
+
+      <button class="auth-btn-main" onclick="doForgotPassword()">Enviar link de redefinição</button>
+
+      <div class="auth-switch">
+        Lembrou a senha? <a onclick="switchAuth('login')">Fazer login</a>
+      </div>
+    </div>
+
+    <!-- RESET PASSWORD VIEW -->
+    <div id="resetView" style="display:none">
+      <div class="auth-title">Nova senha</div>
+      <div class="auth-subtitle">Defina uma nova senha para sua conta</div>
+
+      <div class="auth-error" id="resetError"></div>
+
+      <div class="auth-field">
+        <label class="auth-label">Nova senha</label>
+        <input class="auth-input" id="resetPass" type="password" placeholder="mínimo 8 caracteres, com letra e número" autocomplete="new-password">
+      </div>
+      <div class="auth-field">
+        <label class="auth-label">Confirmar nova senha</label>
+        <input class="auth-input" id="resetPassConfirm" type="password" placeholder="repita a nova senha" autocomplete="new-password">
+      </div>
+
+      <button class="auth-btn-main" onclick="doResetPassword()">Redefinir senha</button>
+
+      <div class="auth-switch">
+        <a onclick="switchAuth('login')">Voltar para o login</a>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script src="https://accounts.google.com/gsi/client" async defer></script>
+<script src="app.js" defer></script>
+</body>
+</html>

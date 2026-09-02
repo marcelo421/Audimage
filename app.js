@@ -31,6 +31,12 @@ async function ensureCsrf() {
   }
 }
 
+async function ensureCsrfFresh() {
+  // Force reload of CSRF token (used after failures)
+  csrfToken = null;
+  await ensureCsrf();
+}
+
 async function apiPost(path, body, method = 'POST') {
   await ensureCsrf();
   const headers = { 'Content-Type': 'application/json' };
@@ -47,6 +53,27 @@ async function apiPost(path, body, method = 'POST') {
   if (!data) {
     throw new Error('Resposta inválida do servidor.');
   }
+
+  // If CSRF token is invalid (403), retry once with a fresh token
+  if (response.status === 403 && data.message && data.message.includes('CSRF')) {
+    await ensureCsrfFresh();
+    const retryHeaders = { 'Content-Type': 'application/json' };
+    if (csrfToken) retryHeaders['X-CSRF-Token'] = csrfToken;
+
+    const retryResponse = await fetch(path, {
+      method,
+      credentials: 'include',
+      headers: retryHeaders,
+      body: body !== undefined ? JSON.stringify(body) : undefined,
+    });
+
+    const retryData = await retryResponse.json().catch(() => null);
+    if (!retryData) {
+      throw new Error('Resposta inválida do servidor.');
+    }
+    return { status: retryResponse.status, data: retryData };
+  }
+
   return { status: response.status, data };
 }
 

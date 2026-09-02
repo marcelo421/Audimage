@@ -1,16 +1,33 @@
--- SQL schema for AUDIMAGE login system
-CREATE TABLE IF NOT EXISTS users (
+CREATE TABLE IF NOT EXISTS migrations (
   id INT AUTO_INCREMENT PRIMARY KEY,
-  username VARCHAR(100) NOT NULL UNIQUE,
-  email VARCHAR(255) NOT NULL UNIQUE,
-  password_hash VARCHAR(255) NOT NULL,
-  email_verified_at TIMESTAMP NULL DEFAULT NULL,
-  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+  filename VARCHAR(255) NOT NULL UNIQUE,
+  applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
--- Email verification tokens. Only the SHA-256 hash of the token is stored;
--- the raw token exists only in the URL sent to the user's inbox and is
--- never persisted or logged.
+CREATE TABLE IF NOT EXISTS users (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    username VARCHAR(100) NOT NULL UNIQUE,
+    email VARCHAR(255) NOT NULL UNIQUE,
+    password_hash VARCHAR(255) NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS presets (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  user_id INT NOT NULL,
+  name VARCHAR(120) NOT NULL,
+  shape VARCHAR(40) NOT NULL,
+  color_mode VARCHAR(20) NOT NULL,
+  intensity SMALLINT UNSIGNED NOT NULL,
+  theme VARCHAR(40) NOT NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT fk_presets_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+  INDEX idx_presets_user (user_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+ALTER TABLE users
+  ADD COLUMN email_verified_at TIMESTAMP NULL DEFAULT NULL AFTER password_hash;
+
 CREATE TABLE IF NOT EXISTS email_verifications (
   id INT AUTO_INCREMENT PRIMARY KEY,
   user_id INT NOT NULL,
@@ -24,8 +41,6 @@ CREATE TABLE IF NOT EXISTS email_verifications (
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
--- Password reset tokens. Only the SHA-256 hash of the token is stored,
--- never the raw value — same rationale as email_verifications.
 CREATE TABLE IF NOT EXISTS password_resets (
   id INT AUTO_INCREMENT PRIMARY KEY,
   user_id INT NOT NULL,
@@ -37,4 +52,18 @@ CREATE TABLE IF NOT EXISTS password_resets (
   KEY idx_user_id (user_id),
   CONSTRAINT fk_password_resets_user
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS presets (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  user_id INT NOT NULL,
+  name VARCHAR(100) NOT NULL,
+  shape VARCHAR(50) NOT NULL,
+  color_mode VARCHAR(20) NOT NULL,
+  intensity INT NOT NULL,
+  theme VARCHAR(50) NOT NULL,
+  color VARCHAR(20) NOT NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT fk_presets_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+  INDEX idx_presets_user_id (user_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

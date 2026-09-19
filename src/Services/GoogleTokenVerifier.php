@@ -15,7 +15,10 @@ class GoogleTokenVerifier
     private const JWKS_URL = 'https://www.googleapis.com/oauth2/v3/certs';
     private const ISSUERS = ['https://accounts.google.com', 'accounts.google.com'];
 
-    public function __construct(private string $expectedAudience)
+    public function __construct(
+        private string $expectedAudience,
+        private ?string $cacheFile = null
+    )
     {
     }
 
@@ -115,13 +118,14 @@ class GoogleTokenVerifier
      */
     private function fetchJwks(): array
     {
-        $cacheFile = sys_get_temp_dir() . '/audimage_google_jwks.json';
+        $cacheFile = $this->cacheFile ?? sys_get_temp_dir() . '/audimage_google_jwks.json';
         $cacheTtl = 3600;
 
         if (is_file($cacheFile) && (time() - filemtime($cacheFile)) < $cacheTtl) {
             $cached = json_decode((string)file_get_contents($cacheFile), true);
-            if (is_array($cached) && !empty($cached['keys'])) {
-                return $cached;
+            $cachedJwks = $this->extractJwks($cached);
+            if ($cachedJwks !== null) {
+                return $cachedJwks;
             }
         }
 
@@ -131,8 +135,9 @@ class GoogleTokenVerifier
             // Serve stale cache rather than fail completely, if we have one.
             if (is_file($cacheFile)) {
                 $stale = json_decode((string)file_get_contents($cacheFile), true);
-                if (is_array($stale) && !empty($stale['keys'])) {
-                    return $stale;
+                $staleJwks = $this->extractJwks($stale);
+                if ($staleJwks !== null) {
+                    return $staleJwks;
                 }
             }
             throw new RuntimeException('Falha ao obter chaves públicas do Google.');
@@ -141,6 +146,29 @@ class GoogleTokenVerifier
         @file_put_contents($cacheFile, json_encode($decoded), LOCK_EX);
 
         return $decoded;
+    }
+
+    /**
+     * Accept both the raw Google response and the wrapped format used by tests.
+     *
+     * @param mixed $cached
+     * @return array<string, mixed>|null
+     */
+    private function extractJwks(mixed $cached): ?array
+    {
+        if (!is_array($cached)) {
+            return null;
+        }
+
+        if (!empty($cached['keys']) && is_array($cached['keys'])) {
+            return $cached;
+        }
+
+        if (isset($cached['jwks']) && is_array($cached['jwks']) && !empty($cached['jwks']['keys'])) {
+            return $cached['jwks'];
+        }
+
+        return null;
     }
 
     private function fetchUrl(string $url): string

@@ -13,6 +13,15 @@ if (empty($_SESSION['user']['id'])) {
 }
 
 $userId = (int)$_SESSION['user']['id'];
+$account = $userRepository->findById($userId);
+$hasAccess = $account
+    && (($account['username'] ?? '') === 'adm_audimage'
+        || in_array($account['subscription_status'] ?? 'inactive', ['active', 'trialing'], true));
+if (!$hasAccess) {
+    $_SESSION = [];
+    JsonResponder::respond(['ok' => false, 'message' => 'Assine o plano mensal para acessar o AUDIMAGE.'], 402);
+}
+
 $method = $_SERVER['REQUEST_METHOD'];
 
 try {

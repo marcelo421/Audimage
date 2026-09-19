@@ -49,7 +49,8 @@ final class GoogleTokenVerifierTest extends TestCase
         $jwt = $this->buildJwt(['iss' => 'https://accounts.google.com', 'aud' => 'someone-elses-client-id', 'exp' => time() + 3600]);
         $verifier = new GoogleTokenVerifier(self::CLIENT_ID, $this->cacheFile);
 
-        $this->assertNull($verifier->verify($jwt));
+        $this->expectException(\RuntimeException::class);
+        $verifier->verify($jwt);
     }
 
     public function testWrongIssuerIsRejected(): void
@@ -57,7 +58,8 @@ final class GoogleTokenVerifierTest extends TestCase
         $jwt = $this->buildJwt(['iss' => 'https://evil.example.com', 'aud' => self::CLIENT_ID, 'exp' => time() + 3600]);
         $verifier = new GoogleTokenVerifier(self::CLIENT_ID, $this->cacheFile);
 
-        $this->assertNull($verifier->verify($jwt));
+        $this->expectException(\RuntimeException::class);
+        $verifier->verify($jwt);
     }
 
     public function testExpiredTokenIsRejected(): void
@@ -65,7 +67,8 @@ final class GoogleTokenVerifierTest extends TestCase
         $jwt = $this->buildJwt(['iss' => 'https://accounts.google.com', 'aud' => self::CLIENT_ID, 'exp' => time() - 1000]);
         $verifier = new GoogleTokenVerifier(self::CLIENT_ID, $this->cacheFile);
 
-        $this->assertNull($verifier->verify($jwt));
+        $this->expectException(\RuntimeException::class);
+        $verifier->verify($jwt);
     }
 
     public function testAlgNoneIsRejected(): void
@@ -75,7 +78,8 @@ final class GoogleTokenVerifierTest extends TestCase
         $jwt = $header . '.' . $payload . '.';
 
         $verifier = new GoogleTokenVerifier(self::CLIENT_ID, $this->cacheFile);
-        $this->assertNull($verifier->verify($jwt));
+        $this->expectException(\RuntimeException::class);
+        $verifier->verify($jwt);
     }
 
     public function testTamperedPayloadFailsSignatureCheck(): void
@@ -90,13 +94,15 @@ final class GoogleTokenVerifierTest extends TestCase
         $tamperedJwt = $headerB64 . '.' . $tamperedPayloadB64 . '.' . $sigB64;
 
         $verifier = new GoogleTokenVerifier(self::CLIENT_ID, $this->cacheFile);
-        $this->assertNull($verifier->verify($tamperedJwt));
+        $this->expectException(\RuntimeException::class);
+        $verifier->verify($tamperedJwt);
     }
 
     public function testMalformedTokenIsRejected(): void
     {
         $verifier = new GoogleTokenVerifier(self::CLIENT_ID, $this->cacheFile);
-        $this->assertNull($verifier->verify('not-a-valid-jwt'));
+        $this->expectException(\RuntimeException::class);
+        $verifier->verify('not-a-valid-jwt');
     }
 
     private function buildJwt(array $payloadOverrides): string

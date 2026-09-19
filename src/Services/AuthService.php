@@ -9,6 +9,7 @@ use App\Exception\ValidationException;
 use App\Exception\InvalidCredentialsException;
 use App\Exception\ConflictException;
 use App\Exception\ExternalServiceException;
+use App\Exception\PaymentRequiredException;
 use App\Domain\AuthResult;
 
 class AuthService
@@ -33,6 +34,8 @@ class AuthService
         if (($account['email_verified_at'] ?? null) === null || $account['email_verified_at'] === '') {
             throw new InvalidCredentialsException('Confirme seu email antes de entrar.');
         }
+
+        $this->assertSubscriptionAccess($account);
 
         session_regenerate_id(true);
         $_SESSION['user'] = [
@@ -117,6 +120,8 @@ class AuthService
                 $this->users->markEmailVerified((int)$existingUser['id']);
             }
 
+            $this->assertSubscriptionAccess($existingUser);
+
             // Regenerate the session id on every successful authentication,
             // including for returning users — otherwise a pre-auth session id
             // could be fixated and reused post-login.
@@ -144,6 +149,11 @@ class AuthService
         $userId = $this->users->createUser($username, $email, $passwordHash);
         $this->users->markEmailVerified($userId);
 
+        $this->assertSubscriptionAccess([
+            'username' => $username,
+            'subscription_status' => 'inactive',
+        ]);
+
         session_regenerate_id(true);
         $_SESSION['user'] = [
             'id' => $userId,
@@ -162,5 +172,16 @@ class AuthService
             return trim($parts[0]);
         }
         return $_SERVER['REMOTE_ADDR'] ?? 'unknown';
+    }
+
+    private function assertSubscriptionAccess(array $account): void
+    {
+        if (($account['username'] ?? '') === 'adm_audimage') {
+            return;
+        }
+
+        if (!in_array($account['subscription_status'] ?? 'inactive', ['active', 'trialing'], true)) {
+            throw new PaymentRequiredException();
+        }
     }
 }

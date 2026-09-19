@@ -8,6 +8,7 @@ use App\Repository\UserRepository;
 use App\Exception\ValidationException;
 use App\Exception\InvalidCredentialsException;
 use App\Exception\ConflictException;
+use App\Exception\PaymentRequiredException;
 
 /**
  * Demonstrates the payoff of decoupling AuthService from JsonResponder/exit():
@@ -96,6 +97,7 @@ final class AuthServiceTest extends TestCase
             'email' => 'alice@example.com',
             'password_hash' => password_hash('correct-horse', PASSWORD_DEFAULT),
             'email_verified_at' => '2026-01-01 00:00:00',
+            'subscription_status' => 'active',
         ]);
 
         $result = $this->auth->login('alice', 'correct-horse');
@@ -103,6 +105,37 @@ final class AuthServiceTest extends TestCase
         $this->assertSame('alice', $result->user['username']);
         $this->assertSame(1, $result->user['id']);
         $this->assertSame('alice', $_SESSION['user']['username']);
+    }
+
+    public function testLoginRejectsAccountWithoutActiveSubscription(): void
+    {
+        $this->users->method('findByUsernameOrEmail')->willReturn([
+            'id' => 1,
+            'username' => 'alice',
+            'email' => 'alice@example.com',
+            'password_hash' => password_hash('correct-horse', PASSWORD_DEFAULT),
+            'email_verified_at' => '2026-01-01 00:00:00',
+            'subscription_status' => 'inactive',
+        ]);
+
+        $this->expectException(PaymentRequiredException::class);
+        $this->auth->login('alice', 'correct-horse');
+    }
+
+    public function testAdminCanLoginWithoutSubscription(): void
+    {
+        $this->users->method('findByUsernameOrEmail')->willReturn([
+            'id' => 1,
+            'username' => 'adm_audimage',
+            'email' => 'adm_audimage@audimage.local',
+            'password_hash' => password_hash('correct-horse', PASSWORD_DEFAULT),
+            'email_verified_at' => '2026-01-01 00:00:00',
+            'subscription_status' => 'inactive',
+        ]);
+
+        $result = $this->auth->login('adm_audimage', 'correct-horse');
+
+        $this->assertSame('adm_audimage', $result->user()['username']);
     }
 
     public function testRegisterRejectsWeakPassword(): void

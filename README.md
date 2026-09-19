@@ -34,9 +34,25 @@ Abra o phpMyAdmin ou o terminal do MySQL e execute:
 
 CREATE DATABASE audimage CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
-Depois rode as migrations (cria tabelas users, presets, etc.):
+Depois abra o PowerShell na raiz do projeto e rode as migrations (cria as tabelas
+`users`, `presets`, etc.):
 
+```powershell
+cd C:\xampp\htdocs\audimage
+C:\xampp\php\php.exe migrations\migrate.php
+```
+
+A raiz do projeto é a pasta que contém o arquivo `composer.json`. Você também pode
+usar o comando abaixo se o Composer estiver instalado e configurado no `PATH`:
+
+```powershell
+cd C:\xampp\htdocs\audimage
 composer migrate
+```
+
+Se aparecer o erro `composer não é reconhecido`, o Composer não está instalado ou
+não foi adicionado ao `PATH`. Nesse caso, use o comando direto com
+`C:\xampp\php\php.exe` mostrado acima.
 
 Passo 4 - Configure as credenciais via variáveis de ambiente
 Crie um arquivo .env na raiz do projeto (não commitado — veja .gitignore) com as
@@ -51,12 +67,18 @@ DB_PASS=
 
 GOOGLE_CLIENT_ID=SEU_GOOGLE_CLIENT_ID
 
+STRIPE_WEBHOOK_SECRET=whsec_sua_chave_do_webhook
+
 MAIL_DRIVER=resend
 RESEND_API_KEY=sua_chave_resend
 MAIL_FROM=no-reply@audimage.app
 MAIL_FROM_NAME=AUDIMAGE
 APP_URL=http://localhost/audimage
 ```
+
+Use em `DB_PASS` a senha configurada no MySQL do XAMPP. Deixe vazio somente se o
+usuário `root` realmente não tiver senha. O arquivo `.env.example` contém o modelo
+local de configuração.
 
 Variáveis importantes:
 - DB_HOST, DB_NAME, DB_USER, DB_PASS: conexão com o MySQL
@@ -66,6 +88,18 @@ Variáveis importantes:
 - MAIL_FROM: endereço do remetente, geralmente um domínio verificado no Resend
 - MAIL_FROM_NAME: nome exibido no remetente
 - APP_URL: URL base do site, usada para montar o link de confirmação de e-mail
+- STRIPE_WEBHOOK_SECRET: segredo do endpoint de webhook da Stripe
+
+O acesso ao AUDIMAGE exige uma assinatura ativa. O usuário `adm_audimage` é a única
+exceção e pode entrar sem pagamento. Configure no Dashboard da Stripe o endpoint
+`https://seu-dominio/api/stripe-webhook.php` para os eventos `checkout.session.completed`,
+`invoice.paid`, `invoice.payment_failed`, `customer.subscription.deleted` e
+`customer.subscription.paused`. Copie o signing secret desse endpoint para
+`STRIPE_WEBHOOK_SECRET`. O email usado no pagamento precisa ser o mesmo da conta.
+
+Contas para apresentação do TCC (criadas pela migration `20260919_0001_create_demo_accounts.sql`):
+- Usuário `demo_ativo`, senha `DemoAtivo123!`: acesso liberado, assinatura simulada ativa.
+- Usuário `demo_bloqueado`, senha `DemoBloqueado123!`: acesso bloqueado, pagamento pendente.
 
 Se `MAIL_DRIVER=log`, o e-mail não é enviado de verdade; ele é gravado em um arquivo
 temporário do PHP. No Windows/XAMPP isso normalmente fica em:

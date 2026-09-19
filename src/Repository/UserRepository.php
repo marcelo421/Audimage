@@ -14,15 +14,22 @@ class UserRepository implements UserPasswordResetLookupInterface
 
     public function findByUsernameOrEmail(string $value): array|false
     {
-        $stmt = $this->pdo->prepare('SELECT id, username, email, password_hash, email_verified_at FROM users WHERE username = :value1 OR email = :value2 LIMIT 1');
+        $stmt = $this->pdo->prepare('SELECT id, username, email, password_hash, email_verified_at, subscription_status FROM users WHERE username = :value1 OR email = :value2 LIMIT 1');
         $stmt->execute([':value1' => $value, ':value2' => $value]);
         return $stmt->fetch();
     }
 
     public function findByEmail(string $email): array|false
     {
-        $stmt = $this->pdo->prepare('SELECT id, username, email, email_verified_at FROM users WHERE email = :email LIMIT 1');
+        $stmt = $this->pdo->prepare('SELECT id, username, email, email_verified_at, subscription_status FROM users WHERE email = :email LIMIT 1');
         $stmt->execute([':email' => $email]);
+        return $stmt->fetch();
+    }
+
+    public function findById(int $id): array|false
+    {
+        $stmt = $this->pdo->prepare('SELECT id, username, email, subscription_status FROM users WHERE id = :id LIMIT 1');
+        $stmt->execute([':id' => $id]);
         return $stmt->fetch();
     }
 
@@ -57,5 +64,34 @@ class UserRepository implements UserPasswordResetLookupInterface
     {
         $stmt = $this->pdo->prepare('UPDATE users SET password_hash = :password_hash WHERE id = :id');
         $stmt->execute([':password_hash' => $passwordHash, ':id' => $userId]);
+    }
+
+    public function updateSubscriptionByEmail(string $email, string $status, ?string $customerId = null, ?string $subscriptionId = null, ?string $periodEnd = null): bool
+    {
+        $stmt = $this->pdo->prepare(
+            'UPDATE users SET subscription_status = :status, stripe_customer_id = COALESCE(:customer_id, stripe_customer_id), stripe_subscription_id = COALESCE(:subscription_id, stripe_subscription_id), subscription_current_period_end = :period_end WHERE email = :email'
+        );
+        $stmt->execute([
+            ':status' => $status,
+            ':customer_id' => $customerId,
+            ':subscription_id' => $subscriptionId,
+            ':period_end' => $periodEnd,
+            ':email' => $email,
+        ]);
+        return $stmt->rowCount() > 0;
+    }
+
+    public function updateSubscriptionByCustomerId(string $customerId, string $status, ?string $subscriptionId = null, ?string $periodEnd = null): bool
+    {
+        $stmt = $this->pdo->prepare(
+            'UPDATE users SET subscription_status = :status, stripe_subscription_id = COALESCE(:subscription_id, stripe_subscription_id), subscription_current_period_end = :period_end WHERE stripe_customer_id = :customer_id'
+        );
+        $stmt->execute([
+            ':status' => $status,
+            ':subscription_id' => $subscriptionId,
+            ':period_end' => $periodEnd,
+            ':customer_id' => $customerId,
+        ]);
+        return $stmt->rowCount() > 0;
     }
 }

@@ -785,6 +785,19 @@ body {
   transform: translateY(-1px);
 }
 
+.auth-btn-payment {
+  display: block;
+  margin-top: 10px;
+  padding: 11px;
+  border: 1px solid var(--accent);
+  border-radius: 10px;
+  color: var(--accent);
+  text-align: center;
+  font-weight: 700;
+  text-decoration: none;
+}
+.auth-btn-payment:hover { background: rgba(255,255,255,0.08); }
+
 /* ===== APP PAGE ===== */
 #screen-app {
   flex-direction: column;

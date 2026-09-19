@@ -6,12 +6,13 @@ use App\Http\Csrf;
 
 require_once __DIR__ . '/bootstrap.php';
 
-// Only POST is accepted, and it must carry a valid CSRF token — otherwise
-// any third-party page could force a logout via a simple GET (img/script tag).
+// Logout só aceita POST e exige CSRF válido.
+// Isso evita que uma página externa force o usuário a sair sem intenção real.
 if ($_SERVER['REQUEST_METHOD'] !== 'POST' || !Csrf::validateRequest()) {
     JsonResponder::respond(['ok' => false, 'message' => 'Invalid CSRF token'], 403);
 }
 
+// Limpa a sessão atual.
 $_SESSION = [];
 if (ini_get('session.use_cookies')) {
     $params = session_get_cookie_params();

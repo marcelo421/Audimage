@@ -4,12 +4,11 @@ declare(strict_types=1);
 
 namespace App\Http;
 
-/**
- * Applies a baseline set of HTTP security headers. Call this once, early,
- * on every request (from bootstrap.php) — before any output is sent.
- */
+// Adiciona cabeçalhos HTTP básicos de segurança.
+// Esses headers ajudam a evitar ataques comuns, como clickjacking, MIME sniffing e execução de scripts não esperada.
 class SecurityHeaders
 {
+    // Aplicação dos headers no início de cada requisição, antes de qualquer saída.
     public static function apply(): void
     {
         if (headers_sent()) {
@@ -19,7 +18,7 @@ class SecurityHeaders
         header('X-Content-Type-Options: nosniff');
         header('X-Frame-Options: DENY');
         header('Referrer-Policy: strict-origin-when-cross-origin');
-        // Mic is used for the visualizer; camera/geolocation are not needed anywhere.
+        // Microfone é usado pelo visualizador; câmera e geolocalização não são necessários aqui.
         header('Permissions-Policy: microphone=(self), camera=(), geolocation=()');
         header(
             'Content-Security-Policy: ' .

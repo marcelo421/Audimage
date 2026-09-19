@@ -7,6 +7,8 @@ use App\Repository\UserRepository;
 require_once __DIR__ . '/bootstrap.php';
 require_once __DIR__ . '/../autoload.php';
 
+// Webhook do Stripe: recebe eventos de pagamento e atualiza a assinatura do usuário.
+// Só aceita POST e valida a assinatura do Stripe para evitar spoofing.
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     JsonResponder::respond(['ok' => false, 'message' => 'Método não permitido.'], 405);
 }
@@ -19,6 +21,7 @@ if ($payload === false || $secret === '' || !verifyStripeSignature($payload, $si
     JsonResponder::respond(['ok' => false, 'message' => 'Webhook inválido.'], 400);
 }
 
+// Decodifica o evento do Stripe e extrai os dados do cliente.
 $event = json_decode($payload, true);
 if (!is_array($event) || !is_array($event['data']['object'] ?? null)) {
     JsonResponder::respond(['ok' => false, 'message' => 'Payload inválido.'], 400);
@@ -30,6 +33,7 @@ $email = trim((string)($object['customer_details']['email'] ?? $object['customer
 $customerId = is_string($object['customer'] ?? null) ? $object['customer'] : null;
 $subscriptionId = is_string($object['subscription'] ?? null) ? $object['subscription'] : null;
 
+// Mapeia eventos do Stripe para o status interno do app: active, inactive ou past_due.
 $status = match ($type) {
     'checkout.session.completed', 'invoice.paid' => 'active',
     'customer.subscription.deleted', 'customer.subscription.paused' => 'inactive',
@@ -50,6 +54,7 @@ if ($status !== null) {
 
 JsonResponder::respond(['ok' => true]);
 
+// Valida a assinatura do webhook do Stripe usando HMAC.
 function verifyStripeSignature(string $payload, string $header, string $secret): bool
 {
     $timestamp = null;

@@ -7,6 +7,8 @@ namespace App\Services;
 use App\Exception\TooManyRequestsException;
 use Redis;
 
+// Limitador de requisições por IP ou por ação.
+// O objetivo é bloquear abuso automatizado mesmo se o Redis não estiver disponível.
 class RateLimiter
 {
     private ?Redis $redis = null;
@@ -22,6 +24,7 @@ class RateLimiter
         $this->allowFileFallback = (getenv('RATE_LIMIT_ALLOW_FILE_FALLBACK') ?: 'true') !== 'false';
         $this->fallbackFile = getenv('RATE_LIMIT_FALLBACK_FILE') ?: sys_get_temp_dir() . '/audimage_rate_limits.json';
 
+        // Tenta usar Redis quando ele existe; se não existir, cai para arquivo local.
         if (class_exists(Redis::class)) {
             try {
                 $redis = new Redis();
@@ -39,11 +42,13 @@ class RateLimiter
         }
     }
 
+    // Informa se o limitador está usando Redis ou fallback em arquivo.
     public function isBackedByRedis(): bool
     {
         return $this->redis !== null;
     }
 
+    // Aplica a regra para um escopo e identificador específicos.
     public function enforce(string $scope, string $identifier): void
     {
         $key = sprintf(
@@ -58,7 +63,7 @@ class RateLimiter
         }
 
         if (!$this->allowFileFallback) {
-            // Fail-closed: no Redis, no fallback allowed — deny by default.
+            // Se não houver Redis e o fallback estiver desativado, bloqueia por segurança.
             error_log('[RATE_LIMITER_ALERT] Denying request: Redis down and file fallback disabled. scope=' . $scope);
             throw new TooManyRequestsException('Serviço temporariamente indisponível. Tente novamente em instantes.');
         }
@@ -66,6 +71,7 @@ class RateLimiter
         $this->enforceWithFile($key);
     }
 
+    // Incrementa o contador no Redis e rejeita se exceder o limite.
     private function enforceWithRedis(string $key): void
     {
         $redisKey = 'rate_limit:' . $key;
@@ -90,11 +96,12 @@ class RateLimiter
         }
     }
 
+    // Fallback em arquivo para ambientes sem Redis.
     private function enforceWithFile(string $key): void
     {
         $fp = @fopen($this->fallbackFile, 'c+');
         if ($fp === false) {
-            // Cannot even use the fallback store — fail closed rather than allow unlimited attempts.
+            // Não dá para persistir o limite; bloqueia por segurança.
             error_log('[RATE_LIMITER_ALERT] Fallback file unavailable, denying request. key=' . $key);
             throw new TooManyRequestsException('Serviço temporariamente indisponível. Tente novamente em instantes.');
         }

@@ -6,6 +6,7 @@ use App\Http\JsonResponder;
 require_once __DIR__ . '/bootstrap.php';
 require_once __DIR__ . '/dependencies.php';
 
+// Retorna o usuário atual se a sessão for válida e a conta puder acessar o app.
 if (!empty($_SESSION['user'])) {
     $account = $userRepository->findById((int)($_SESSION['user']['id'] ?? 0));
     $hasAccess = $account

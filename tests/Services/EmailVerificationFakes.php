@@ -5,6 +5,8 @@ use App\Repository\EmailVerificationRepositoryInterface;
 use App\Repository\UserEmailVerificationLookupInterface;
 use App\Mail\MailerInterface;
 
+// Fakes em memória usados nos testes de verificação de e-mail.
+// Eles simulam o banco e o serviço de e-mail sem depender de MySQL ou SMTP real.
 final class InMemoryEmailVerificationRepository implements EmailVerificationRepositoryInterface
 {
     /** @var array<string, array{user_id:int, expires_at:string, used_at:?string}> */
@@ -75,6 +77,7 @@ final class SpyMailer implements MailerInterface
     public array $sent = [];
     public bool $shouldSucceed = true;
 
+    // Guarda cada e-mail enviado em testes para validar o conteúdo e o destinatário.
     public function send(string $to, string $subject, string $htmlBody): bool
     {
         $this->sent[] = ['to' => $to, 'subject' => $subject, 'body' => $htmlBody];

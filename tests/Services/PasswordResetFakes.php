@@ -6,6 +6,8 @@ require_once __DIR__ . '/EmailVerificationFakes.php';
 use App\Repository\PasswordResetRepositoryInterface;
 use App\Repository\UserPasswordResetLookupInterface;
 
+// Fakes em memória usados nos testes de reset de senha.
+// Eles reproduzem o comportamento esperado do repositório de tokens de recuperação.
 final class InMemoryPasswordResetRepository implements PasswordResetRepositoryInterface
 {
     /** @var array<string, array{user_id:int, expires_at:string, used_at:?string}> */
@@ -47,6 +49,7 @@ final class InMemoryUserRepositoryWithPassword extends InMemoryUserRepository im
     /** @var array<int, string> */
     public array $passwordHashes = [];
 
+    // Armazena o hash da nova senha em memória para os testes verificarem a atualização.
     public function updatePasswordHash(int $userId, string $passwordHash): void
     {
         $this->passwordHashes[$userId] = $passwordHash;

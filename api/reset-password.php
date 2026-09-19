@@ -9,10 +9,8 @@ use App\Http\Csrf;
 require_once __DIR__ . '/bootstrap.php';
 require_once __DIR__ . '/dependencies.php';
 
-// Unlike verify-email.php, this is a POST triggered by the user submitting
-// a form inside our own SPA (after following the emailed link to
-// index.html?reset_token=...), not a raw click from the email client — so
-// normal CSRF validation applies here.
+// Confirma a redefinição de senha usando o token recebido no link do e-mail.
+// Aqui o usuário está enviando um formulário do próprio app, então CSRF continua obrigatório.
 if ($_SERVER['REQUEST_METHOD'] !== 'POST' || !Csrf::validateRequest()) {
     JsonResponder::respond(['ok' => false, 'message' => 'Invalid CSRF token'], 403);
 }
@@ -26,10 +24,7 @@ try {
         JsonResponder::respond(['ok' => false, 'message' => 'Token ausente.'], 400);
     }
 
-    // Dedicated limit on the confirm step, per IP — defense in depth against
-    // scripted abuse of this endpoint. The token itself (256 bits) is not
-    // practically brute-forceable, so this isn't the primary control, but
-    // it keeps this endpoint consistent with the rest of the app's posture.
+    // Limita tentativas de confirmação para dificultar abuso automatizado.
     $rateLimiter->enforce('password-reset-confirm', $_SERVER['REMOTE_ADDR'] ?? 'unknown');
 
     $result = $passwordResetService->resetPassword($token, $password);

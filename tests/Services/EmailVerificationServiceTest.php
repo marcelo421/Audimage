@@ -8,6 +8,8 @@ use App\Services\EmailVerificationService;
 use App\Services\RateLimiter;
 use App\Exception\TooManyRequestsException;
 
+// Testes do fluxo de verificação de e-mail.
+// Eles cobrem criação de token, uso único, expiração e proteção por rate limit.
 final class EmailVerificationServiceTest extends TestCase
 {
     private InMemoryUserRepository $users;
@@ -22,11 +24,10 @@ final class EmailVerificationServiceTest extends TestCase
         $this->mailer = new SpyMailer();
         $this->rateLimiterFile = sys_get_temp_dir() . '/audimage_test_ev_rl_' . uniqid() . '.json';
 
-        // Force RateLimiter through its deterministic file-based fallback
-        // (no real Redis available in this environment).
+        // Força o RateLimiter a usar fallback de arquivo em vez de Redis real.
         putenv('REDIS_HOST=127.0.0.1');
         putenv('REDIS_PORT=1');
-        putenv('RATE_LIMIT_ALLOW_FILE_FALLBACK'); // default: allowed
+        putenv('RATE_LIMIT_ALLOW_FILE_FALLBACK');
     }
 
     protected function tearDown(): void
@@ -56,12 +57,11 @@ final class EmailVerificationServiceTest extends TestCase
         $this->assertCount(1, $this->mailer->sent);
         $this->assertSame('user@example.com', $this->mailer->sent[0]['to']);
 
-        // Extract the raw token from the email body/link.
         preg_match('/token=([a-f0-9]+)/', $this->mailer->sent[0]['body'], $matches);
         $rawToken = $matches[1] ?? '';
         $this->assertNotSame('', $rawToken);
 
-        // The stored record must be keyed by the SHA-256 hash, not the raw token.
+        // O token guardado no banco deve ser o hash SHA-256, não o valor bruto.
         $this->assertArrayNotHasKey($rawToken, $this->verifications->tokens);
         $this->assertArrayHasKey(hash('sha256', $rawToken), $this->verifications->tokens);
     }
@@ -108,7 +108,7 @@ final class EmailVerificationServiceTest extends TestCase
 
     public function testVerifyExpiredTokenFails(): void
     {
-        // Manually seed an already-expired token, bypassing sendVerificationEmail's TTL.
+        // Insere um token já expirado manualmente para testar a expiração.
         $this->users->addUser(1, 'user1', 'user@example.com');
         $this->verifications->create(1, hash('sha256', 'raw-expired-token'), new \DateTimeImmutable('-1 hour'));
 
@@ -123,7 +123,7 @@ final class EmailVerificationServiceTest extends TestCase
     {
         $service = $this->makeService();
 
-        // No exception, no distinguishable outcome for a non-existent email.
+        // Não revela se a conta existe ou não; a resposta é genérica.
         $service->resend('nobody@example.com', '203.0.113.5');
 
         $this->assertCount(0, $this->mailer->sent, 'no email should be sent for a non-existent account');
@@ -150,7 +150,7 @@ final class EmailVerificationServiceTest extends TestCase
 
         $service->resend('user@example.com', '203.0.113.5');
 
-        // The old token must no longer verify — only the newest one should work.
+        // O token antigo deve deixar de funcionar ao emitir um novo.
         $this->assertFalse($service->verify($firstToken));
     }
 
@@ -161,7 +161,7 @@ final class EmailVerificationServiceTest extends TestCase
 
         $this->expectException(TooManyRequestsException::class);
         for ($i = 0; $i < 10; $i++) {
-            $service->resend('user@example.com', '203.0.113.' . $i); // vary IP, keep email constant
+            $service->resend('user@example.com', '203.0.113.' . $i);
         }
     }
 }

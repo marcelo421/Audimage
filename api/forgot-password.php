@@ -9,6 +9,8 @@ use App\Http\Csrf;
 require_once __DIR__ . '/bootstrap.php';
 require_once __DIR__ . '/dependencies.php';
 
+// Solicita redefinição de senha.
+// Valida email, exige CSRF e faz o envio do link de recuperação sem revelar se a conta existe.
 if ($_SERVER['REQUEST_METHOD'] !== 'POST' || !Csrf::validateRequest()) {
     JsonResponder::respond(['ok' => false, 'message' => 'Invalid CSRF token'], 403);
 }
@@ -23,9 +25,7 @@ try {
 
     $passwordResetService->requestReset($email, $_SERVER['REMOTE_ADDR'] ?? 'unknown');
 
-    // Same generic response whether or not the account exists — requestReset()
-    // itself already guarantees this internally; the endpoint must not add
-    // an enumeration signal (different message/status/timing) on top of that.
+    // Resposta genérica para não revelar se a conta existe ou não.
     JsonResponder::respond([
         'ok' => true,
         'message' => 'Se o email estiver cadastrado, enviamos um link de redefinição de senha.',

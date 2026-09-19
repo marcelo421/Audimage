@@ -10,6 +10,8 @@ use App\Http\Csrf;
 require_once __DIR__ . '/bootstrap.php';
 require_once __DIR__ . '/dependencies.php';
 
+// Login via Google.
+// Exige POST, token CSRF válido e token JWT do Google para confirmar a identidade do usuário.
 if ($_SERVER['REQUEST_METHOD'] !== 'POST' || !Csrf::validateRequest()) {
     JsonResponder::respond(['ok' => false, 'message' => 'Invalid CSRF token'], 403);
 }

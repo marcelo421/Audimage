@@ -1,14 +1,18 @@
 <?php
 declare(strict_types=1);
 
+// Este arquivo roda antes de qualquer endpoint da API.
+// Ele carrega o autoload, lê o .env e configura a sessão HTTP do projeto.
 require_once __DIR__ . '/../autoload.php';
 
 loadDotEnv(__DIR__ . '/../.env');
 
 use App\Http\SecurityHeaders;
 
+// Aplica cabeçalhos de segurança básicos do app para reforçar proteção.
 SecurityHeaders::apply();
 
+// Configura a sessão com comportamento mais seguro e restritivo.
 ini_set('session.use_strict_mode', '1');
 ini_set('session.use_only_cookies', '1');
 ini_set('session.cookie_httponly', '1');
@@ -24,6 +28,8 @@ if (session_status() !== PHP_SESSION_ACTIVE) {
     session_start();
 }
 
+// Lê variáveis do arquivo .env e as coloca em ambiente do PHP.
+// Isso permite que o código use getenv('DB_HOST'), getenv('GOOGLE_CLIENT_ID'), etc.
 function loadDotEnv(string $envFile): void
 {
     if (!is_file($envFile)) {
@@ -49,6 +55,7 @@ function loadDotEnv(string $envFile): void
             continue;
         }
 
+        // Evita sobrescrever uma variável já existente no ambiente do sistema.
         if (getenv($key) === false) {
             $value = preg_replace('/^"(.*)"$/', '$1', $value);
             $value = preg_replace("/^'(.*)'$/", '$1', $value);

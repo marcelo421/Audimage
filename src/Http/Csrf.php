@@ -4,8 +4,11 @@ declare(strict_types=1);
 
 namespace App\Http;
 
+// Classe responsável por proteger formulários e requisições que mudam estado.
+// O objetivo é garantir que a requisição veio do próprio app e não de um site externo.
 class Csrf
 {
+    // Gera um token CSRF válido para a sessão atual, se ele ainda não existir.
     public static function ensureToken(): string
     {
         if (session_status() !== PHP_SESSION_ACTIVE) {
@@ -19,12 +22,13 @@ class Csrf
         return $_SESSION['csrf_token'];
     }
 
+    // Lê o token já guardado na sessão.
     public static function getToken(): ?string
     {
         return $_SESSION['csrf_token'] ?? null;
     }
 
-    // Validate token from the `X-CSRF-Token` request header.
+    // Valida o token enviado pelo navegador no cabeçalho X-CSRF-Token.
     public static function validateRequest(): bool
     {
         if (session_status() !== PHP_SESSION_ACTIVE) {

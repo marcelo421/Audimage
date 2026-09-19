@@ -1,6 +1,8 @@
--- Persists visualizer presets per user, replacing the old localStorage-only
--- implementation. This is what the paid plans actually advertise
--- ("Presets ilimitados"), so it belongs server-side and synced across devices.
+-- Esta migration cria a tabela de presets, que guarda as configurações visuais
+-- salvas por cada usuário no servidor. Antes, isso era salvo só no navegador,
+-- e isso podia causar conflitos entre usuários e dispositivos.
+--
+-- Em linguagem simples: cada linha desta tabela representa um preset salvo por um usuário.
 CREATE TABLE IF NOT EXISTS presets (
   id INT AUTO_INCREMENT PRIMARY KEY,
   user_id INT NOT NULL,

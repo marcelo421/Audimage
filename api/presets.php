@@ -8,6 +8,8 @@ use App\Http\Csrf;
 require_once __DIR__ . '/bootstrap.php';
 require_once __DIR__ . '/dependencies.php';
 
+// Middleware simples da rota de presets.
+// Garante que o usuário esteja logado e que tenha acesso pago ou seja o admin.
 if (empty($_SESSION['user']['id'])) {
     JsonResponder::respond(['ok' => false, 'message' => 'Não autenticado.'], 401);
 }
@@ -25,16 +27,18 @@ if (!$hasAccess) {
 $method = $_SERVER['REQUEST_METHOD'];
 
 try {
+    // GET: retorna os presets do usuário logado.
     if ($method === 'GET') {
         $presets = $presetRepository->findAllForUser($userId);
         JsonResponder::respond(['ok' => true, 'presets' => $presets]);
     }
 
-    // All state-changing methods require a valid CSRF token.
+    // Qualquer operação que muda estado exige CSRF válido.
     if (!Csrf::validateRequest()) {
         JsonResponder::respond(['ok' => false, 'message' => 'Invalid CSRF token'], 403);
     }
 
+    // POST: cria um novo preset com configuração visual.
     if ($method === 'POST') {
         $data = Request::getJsonBody();
 
@@ -62,6 +66,7 @@ try {
         JsonResponder::respond(['ok' => true, 'id' => $id]);
     }
 
+    // DELETE: remove somente o preset que pertence ao usuário autenticado.
     if ($method === 'DELETE') {
         parse_str(file_get_contents('php://input') ?: '', $body);
         $id = (int)($_GET['id'] ?? $body['id'] ?? 0);
@@ -69,8 +74,6 @@ try {
             JsonResponder::respond(['ok' => false, 'message' => 'Id inválido.'], 400);
         }
 
-        // deleteForUser scopes the DELETE by user_id, so a user can never
-        // remove a preset that isn't theirs, even by guessing/enumerating ids.
         $deleted = $presetRepository->deleteForUser($id, $userId);
         JsonResponder::respond(['ok' => $deleted]);
     }

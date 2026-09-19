@@ -10,12 +10,8 @@ use App\Exception\InvalidCredentialsException;
 use App\Exception\ConflictException;
 use App\Exception\PaymentRequiredException;
 
-/**
- * Demonstrates the payoff of decoupling AuthService from JsonResponder/exit():
- * it can now be exercised with plain mocks, no HTTP context, no session
- * superglobals wired through a web server, no process termination to work
- * around. This was NOT possible with the previous implementation.
- */
+// Testes do serviço de autenticação.
+// Eles validam regras de login, cadastro, verificação de email e requisitos de assinatura sem depender de um servidor HTTP real.
 final class AuthServiceTest extends TestCase
 {
     private UserRepository $users;
@@ -30,9 +26,7 @@ final class AuthServiceTest extends TestCase
         $_SESSION = [];
 
         $this->users = $this->createMock(UserRepository::class);
-        // RateLimiter::enforce() is void and simply not called in these
-        // tests unless we want it to throw — mocking it isolates AuthService
-        // from needing a real Redis connection.
+        // RateLimiter::enforce() é void e não é chamado nesses testes a menos que seja necessário forçar exceção.
         $this->rateLimiter = $this->createMock(RateLimiter::class);
 
         $this->auth = new AuthService($this->users, $this->rateLimiter);

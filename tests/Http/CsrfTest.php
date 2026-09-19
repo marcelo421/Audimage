@@ -4,6 +4,8 @@ declare(strict_types=1);
 use PHPUnit\Framework\TestCase;
 use App\Http\Csrf;
 
+// Testes do mecanismo de CSRF.
+// Eles verificam que o token é gerado, persistido na sessão e rejeitado quando não bate com o cabeçalho enviado pelo cliente.
 final class CsrfTest extends TestCase
 {
     protected function setUp(): void

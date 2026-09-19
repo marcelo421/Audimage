@@ -7,12 +7,15 @@ namespace App\Services;
 use RuntimeException;
 
 /**
- * Validates Google Sign-In ID tokens locally using Google's published JWKS
- * (RS256), instead of relying on the debug-only `tokeninfo` endpoint.
+ * Valida tokens de login do Google localmente usando as chaves públicas públicas
+ * do Google (JWKS) e o algoritmo RS256.
+ * Em termos simples: confirma que o token veio mesmo do Google e foi emitido para este app.
  */
 class GoogleTokenVerifier
 {
+    // URL pública do Google que entrega as chaves de assinatura dos tokens.
     private const JWKS_URL = 'https://www.googleapis.com/oauth2/v3/certs';
+    // Emissores válidos do Google. O token precisa vir de um desses endereços.
     private const ISSUERS = ['https://accounts.google.com', 'accounts.google.com'];
 
     public function __construct(
@@ -23,11 +26,16 @@ class GoogleTokenVerifier
     }
 
     /**
-     * @return array<string, mixed> the decoded, verified payload
+     * Verifica um token do Google inteiro.
+     * Faz a leitura do header, payload e assinatura, valida a assinatura, depois confirma
+     * os dados importantes (emissor, app, expiração, email verificado).
+     *
+     * @return array<string, mixed> o payload decodificado e validado
      * @throws RuntimeException on any validation failure
      */
     public function verify(string $idToken): array
     {
+        // O token JWT tem 3 partes separadas por ponto: header.payload.signature.
         $parts = explode('.', $idToken);
         if (count($parts) !== 3) {
             throw new RuntimeException('Formato de token inválido.');
@@ -35,6 +43,7 @@ class GoogleTokenVerifier
 
         [$headerB64, $payloadB64, $sigB64] = $parts;
 
+        // Decodifica header e payload para arrays PHP.
         $header = json_decode($this->base64UrlDecode($headerB64), true);
         $payload = json_decode($this->base64UrlDecode($payloadB64), true);
         $signature = $this->base64UrlDecode($sigB64);
@@ -43,15 +52,18 @@ class GoogleTokenVerifier
             throw new RuntimeException('Token malformado.');
         }
 
+        // O Google usa RS256 para assinar tokens de login.
         if (($header['alg'] ?? '') !== 'RS256') {
             throw new RuntimeException('Algoritmo de assinatura não suportado.');
         }
 
+        // O campo kid identifica qual chave do Google assinou o token.
         $kid = $header['kid'] ?? null;
         if (!$kid) {
             throw new RuntimeException('Token sem identificador de chave.');
         }
 
+        // Busca a chave pública correta para validar a assinatura.
         $publicKeyPem = $this->getPublicKeyForKid((string)$kid);
         $signedInput = $headerB64 . '.' . $payloadB64;
 
@@ -60,16 +72,21 @@ class GoogleTokenVerifier
             throw new RuntimeException('Falha ao carregar chave pública do Google.');
         }
 
+        // Verifica se a assinatura do token foi feita pela chave correta do Google.
         $verified = openssl_verify($signedInput, $signature, $pubKey, OPENSSL_ALGO_SHA256);
         if ($verified !== 1) {
             throw new RuntimeException('Assinatura do token inválida.');
         }
 
+        // Confere claims importantes antes de aceitar o login.
         $this->assertClaims($payload);
 
         return $payload;
     }
 
+    /**
+     * Valida as regras do token: emissor, app correta, expiração e email verificado.
+     */
     private function assertClaims(array $payload): void
     {
         $now = time();
@@ -100,6 +117,9 @@ class GoogleTokenVerifier
         }
     }
 
+    /**
+     * Pega a chave pública correta da Google usando o valor kid do token.
+     */
     private function getPublicKeyForKid(string $kid): string
     {
         $jwks = $this->fetchJwks();
@@ -114,7 +134,8 @@ class GoogleTokenVerifier
     }
 
     /**
-     * Fetches and lightly caches Google's JWKS for the lifetime of the process/cache file.
+     * Busca as chaves públicas do Google e guarda em cache por 1 hora.
+     * Se a rede falhar, tenta usar um cache antigo em vez de quebrar tudo.
      */
     private function fetchJwks(): array
     {
@@ -132,7 +153,7 @@ class GoogleTokenVerifier
         $raw = $this->fetchUrl(self::JWKS_URL);
         $decoded = json_decode($raw, true);
         if (!is_array($decoded) || empty($decoded['keys'])) {
-            // Serve stale cache rather than fail completely, if we have one.
+            // Se o Google falhar, tenta usar o cache antigo em vez de parar tudo.
             if (is_file($cacheFile)) {
                 $stale = json_decode((string)file_get_contents($cacheFile), true);
                 $staleJwks = $this->extractJwks($stale);
@@ -149,10 +170,7 @@ class GoogleTokenVerifier
     }
 
     /**
-     * Accept both the raw Google response and the wrapped format used by tests.
-     *
-     * @param mixed $cached
-     * @return array<string, mixed>|null
+     * Aceita tanto a resposta bruta do Google quanto o formato usado em testes.
      */
     private function extractJwks(mixed $cached): ?array
     {
@@ -171,6 +189,10 @@ class GoogleTokenVerifier
         return null;
     }
 
+    /**
+     * Faz a requisição HTTP para buscar as chaves públicas do Google.
+     * Primeiro tenta cURL; se não existir, usa file_get_contents.
+     */
     private function fetchUrl(string $url): string
     {
         if (function_exists('curl_init')) {
@@ -195,8 +217,8 @@ class GoogleTokenVerifier
     }
 
     /**
-     * Converts an RSA JWK (n, e) into a PEM-encoded public key using DER/ASN.1 encoding,
-     * without requiring any third-party JWT/crypto library.
+     * Converte a chave JWK em formato PEM para que o PHP possa verificar assinatura RSA.
+     * Isso não depende de uma biblioteca externa.
      */
     private function jwkToPem(array $jwk): string
     {
@@ -212,12 +234,12 @@ class GoogleTokenVerifier
 
         $rsaPublicKey = $this->derEncodeSequence($modulusEncoded . $exponentEncoded);
 
-        // RSA algorithm identifier: SEQUENCE { OID rsaEncryption, NULL }
+        // Identificador da chave RSA: OID rsaEncryption + NULL.
         $algorithmIdentifier = $this->derEncodeSequence(
-            hex2bin('06092a864886f70d0101010500') // OID 1.2.840.113549.1.1.1 + NULL
+            hex2bin('06092a864886f70d0101010500')
         );
 
-        $publicKeyBitString = "\x00" . $rsaPublicKey; // prepend unused-bits byte
+        $publicKeyBitString = "\x00" . $rsaPublicKey;
         $bitString = $this->derEncode(0x03, $publicKeyBitString);
 
         $spki = $this->derEncodeSequence($algorithmIdentifier . $bitString);
@@ -228,10 +250,12 @@ class GoogleTokenVerifier
         return "-----BEGIN PUBLIC KEY-----\n{$chunks}-----END PUBLIC KEY-----\n";
     }
 
+    /**
+     * Converte uma parte inteira em DER para representar números em ASN.1.
+     */
     private function derEncodeInteger(string $bin): string
     {
-        // Strip leading zero bytes, but keep a leading 0x00 if the high bit is set
-        // (so it isn't interpreted as a negative number).
+        // Remove zeros à esquerda, mas mantém um zero se o valor for negativo em binário.
         $bin = ltrim($bin, "\x00");
         if ($bin === '') {
             $bin = "\x00";
@@ -242,11 +266,17 @@ class GoogleTokenVerifier
         return $this->derEncode(0x02, $bin);
     }
 
+    /**
+     * Encapsula um bloco em sequence DER.
+     */
     private function derEncodeSequence(string $bin): string
     {
         return $this->derEncode(0x30, $bin);
     }
 
+    /**
+     * Monta um valor DER usando tag + length + conteúdo.
+     */
     private function derEncode(int $tag, string $bin): string
     {
         $length = strlen($bin);
@@ -259,6 +289,9 @@ class GoogleTokenVerifier
         return chr($tag) . $lengthBytes . $bin;
     }
 
+    /**
+     * Decodifica um valor base64url usado em JWT.
+     */
     private function base64UrlDecode(string $data): string
     {
         $remainder = strlen($data) % 4;

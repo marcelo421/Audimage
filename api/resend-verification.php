@@ -9,6 +9,8 @@ use App\Http\Csrf;
 require_once __DIR__ . '/bootstrap.php';
 require_once __DIR__ . '/dependencies.php';
 
+// Reenvia o link de confirmação de e-mail.
+// Garante CSRF e responde de forma genérica para não expor se a conta já foi verificada.
 if ($_SERVER['REQUEST_METHOD'] !== 'POST' || !Csrf::validateRequest()) {
     JsonResponder::respond(['ok' => false, 'message' => 'Invalid CSRF token'], 403);
 }
@@ -23,9 +25,6 @@ try {
 
     $emailVerificationService->resend($email, $_SERVER['REMOTE_ADDR'] ?? 'unknown');
 
-    // Generic response regardless of whether the account exists or is
-    // already verified — resend() itself enforces this; the endpoint must
-    // not add an enumeration signal of its own on top of that.
     JsonResponder::respond([
         'ok' => true,
         'message' => 'Se o email estiver cadastrado e pendente de confirmação, um novo link foi enviado.',

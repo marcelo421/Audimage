@@ -8,6 +8,8 @@ use App\Services\PasswordResetService;
 use App\Services\RateLimiter;
 use App\Exception\TooManyRequestsException;
 
+// Testes do serviço de recuperação de senha.
+// Eles validam geração de token, expiração, uso único e proteção por taxa de requisições.
 final class PasswordResetServiceTest extends TestCase
 {
     private InMemoryUserRepositoryWithPassword $users;
@@ -73,7 +75,7 @@ final class PasswordResetServiceTest extends TestCase
 
     public function testResetPasswordWithValidTokenUpdatesHashAndVerifiesEmail(): void
     {
-        $this->users->addUser(1, 'user1', 'user@example.com'); // starts unverified
+        $this->users->addUser(1, 'user1', 'user@example.com');
         $service = $this->makeService();
         $service->requestReset('user@example.com', '203.0.113.1');
         $rawToken = $this->extractToken($this->mailer->sent[0]['body']);
@@ -133,8 +135,7 @@ final class PasswordResetServiceTest extends TestCase
         $result = $service->resetPassword($rawToken, 'short');
 
         $this->assertFalse($result['ok']);
-        // Token must still be valid/unused after a rejected weak password —
-        // the user should be able to retry with a stronger one.
+        // O token deve continuar válido após uma senha fraca rejeitada.
         $this->assertArrayHasKey(hash('sha256', $rawToken), $this->resets->tokens);
         $this->assertNull($this->resets->tokens[hash('sha256', $rawToken)]['used_at']);
     }
@@ -173,7 +174,7 @@ final class PasswordResetServiceTest extends TestCase
         $this->expectException(TooManyRequestsException::class);
         for ($i = 0; $i < 10; $i++) {
             $email = $i % 2 === 0 ? 'user1@example.com' : 'user2@example.com';
-            $service->requestReset($email, '203.0.113.99'); // same IP every time
+            $service->requestReset($email, '203.0.113.99');
         }
     }
 }

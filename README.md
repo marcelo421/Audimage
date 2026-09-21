@@ -97,14 +97,13 @@ exceção e pode entrar sem pagamento. Configure no Dashboard da Stripe o endpoi
 `customer.subscription.paused`. Copie o signing secret desse endpoint para
 `STRIPE_WEBHOOK_SECRET`. O email usado no pagamento precisa ser o mesmo da conta.
 
-Contas para apresentação do TCC (criadas pela migration `20260919_0001_create_demo_accounts.sql`):
+Contas para teste (criadas pela migration `20260919_0001_create_demo_accounts.sql`):
 - Usuário `demo_ativo`, senha `DemoAtivo123!`: acesso liberado, assinatura simulada ativa.
 - Usuário `demo_bloqueado`, senha `DemoBloqueado123!`: acesso bloqueado, pagamento pendente.
 
 Se `MAIL_DRIVER=log`, o e-mail não é enviado de verdade; ele é gravado em um arquivo
 temporário do PHP. No Windows/XAMPP isso normalmente fica em:
 - %TEMP%\audimage_mail.log
-- Exemplo real no ambiente atual: C:\Users\MARCEL~1\AppData\Local\Temp\audimage_mail.log
 
 Para usar Resend:
 1. Crie uma conta em https://resend.com

@@ -17,7 +17,7 @@ class MailerFactory
                 $fromName = (string)(getenv('MAIL_FROM_NAME') ?: 'AUDIMAGE');
                 if ($apiKey === '') {
                     error_log('MailerFactory: MAIL_DRIVER=resend but RESEND_API_KEY is empty — falling back to LogMailer.');
-                    return new LogMailer();
+                    return new LogMailer(self::logFileFromEnv());
                 }
                 return new ResendMailer($apiKey, $from, $fromName);
 
@@ -30,13 +30,19 @@ class MailerFactory
                 $fromName = (string)(getenv('MAIL_FROM_NAME') ?: 'AUDIMAGE');
                 if ($host === '') {
                     error_log('MailerFactory: MAIL_DRIVER=smtp but SMTP_HOST is empty — falling back to LogMailer.');
-                    return new LogMailer();
+                    return new LogMailer(self::logFileFromEnv());
                 }
                 return new SmtpMailer($host, $port, $user, $pass, $from, $fromName);
 
             case 'log':
             default:
-                return new LogMailer();
+                return new LogMailer(self::logFileFromEnv());
         }
+    }
+
+    private static function logFileFromEnv(): ?string
+    {
+        $path = trim((string)getenv('MAIL_LOG_FILE'));
+        return $path !== '' ? $path : null;
     }
 }

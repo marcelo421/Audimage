@@ -11,7 +11,6 @@ class Connection
 {
     /**
      * Cria a conexão com o banco usando as variáveis de ambiente do projeto.
-     * Em linguagem simples: lê host, banco, usuário e senha e abre a conexão PDO.
      */
     public static function createFromEnv(): PDO
     {

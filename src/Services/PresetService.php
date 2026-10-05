@@ -11,7 +11,7 @@ use App\Repository\PresetRepository;
 class PresetService
 {
     // Lista de formas permitidas para o visualizador. Isso valida dados vindos do frontend.
-    private const ALLOWED_SHAPES = ['barras', 'onda', 'circulos', 'espelho', 'pontos', 'radial', 'poligonos', 'linha'];
+    private const ALLOWED_SHAPES = ['barras', 'onda', 'circulos', 'espelho', 'pontos', 'radial', 'vortice', 'poligonos', 'linha'];
     // Modos de cor aceitos pela interface.
     private const ALLOWED_COLOR_MODES = ['gradient', 'solid'];
     // Temas visuais válidos para o app.

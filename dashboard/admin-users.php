@@ -6,7 +6,13 @@ use App\Http\Request;
 use App\Http\Csrf;
 
 require_once __DIR__ . '/bootstrap.php';
-require_once __DIR__ . '/dependencies.php';
+
+try {
+    require_once __DIR__ . '/dependencies.php';
+} catch (\Throwable $e) {
+    error_log('[ADMIN-USERS] Falha ao carregar dependências: ' . $e->getMessage());
+    JsonResponder::serverError('Falha ao conectar ao banco de dados.');
+}
 
 // Rota exclusiva do admin: lista usuários e permite alterar a permissão
 // (subscription_status) manualmente pelo dashboard.

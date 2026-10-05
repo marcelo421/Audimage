@@ -530,10 +530,8 @@ function drawIdle(W, H, t, theme) {
       ctx.strokeStyle = color ? hexToRgba(color, 0.5) : getNoteColor(i, count, 0.5);
       ctx.lineWidth = 1.5; ctx.stroke();
     }
-  } else if (state.shape === 'poligonos') {
-    const cx = W / 2, cy = H / 2;
-    drawPolygon(cx, cy, Math.min(W, H) * 0.15 * (0.85 + pulse * 0.3), 6, t * 0.5, color || theme.viz, 0.6);
-    drawPolygon(cx, cy, Math.min(W, H) * 0.1 * (0.85 + pulse * 0.3), 3, -t * 0.7, color || theme.viz, 0.5);
+  } else if (state.shape === 'vortice') {
+    drawVortice(W, H, color, 1, t, false);
   }
 }
 
@@ -549,15 +547,27 @@ function getNoteColorForFraction(fraction, alpha) {
   return hexToRgba(noteColors[idx], alpha);
 }
 
-function drawPolygon(cx, cy, r, sides, rot, color, alpha) {
-  ctx.beginPath();
-  for (let i = 0; i < sides; i++) {
-    const angle = rot + (i / sides) * Math.PI * 2;
-    ctx.lineTo(cx + Math.cos(angle) * r, cy + Math.sin(angle) * r);
+function getFrequencyColor(binIndex, level = 0.5, alpha = 1) {
+  const sampleRate = audioCtx?.sampleRate || 48000;
+  const frequency = Math.max(55, binIndex * sampleRate / FFT);
+  const position = Math.max(0, Math.min(1,
+    Math.log(frequency / 55) / Math.log(4000 / 55)
+  ));
+  const hue = 18 + position * 270;
+  const lightness = 43 + Math.max(0, Math.min(1, level)) * 20;
+  return hslToRgba(hue / 360, 0.92, lightness / 100, alpha);
+}
+
+function getDominantFrequencyBin() {
+  if (!freqData) return 8;
+  const sampleRate = audioCtx?.sampleRate || 48000;
+  const minBin = Math.max(1, Math.floor(55 * FFT / sampleRate));
+  const maxBin = Math.min(freqData.length - 1, Math.ceil(4000 * FFT / sampleRate));
+  let dominantBin = minBin;
+  for (let bin = minBin + 1; bin <= maxBin; bin++) {
+    if (freqData[bin] > freqData[dominantBin]) dominantBin = bin;
   }
-  ctx.closePath();
-  ctx.strokeStyle = hexToRgba(color, alpha);
-  ctx.lineWidth = 2; ctx.stroke();
+  return dominantBin;
 }
 
 // ===== MAIN RENDER =====
@@ -577,7 +587,7 @@ function render() {
     case 'espelho':   drawEspelho(W, H, baseColor, intMult); break;
     case 'pontos':    drawPontos(W, H, baseColor, intMult); break;
     case 'radial':    drawRadial(W, H, baseColor, intMult); break;
-    case 'poligonos': drawPoligonos(W, H, baseColor, intMult); break;
+    case 'vortice':   drawVortice(W, H, baseColor, intMult, 0, true); break;
     case 'linha':     drawLinha(W, H, baseColor, intMult); break;
   }
   animId = requestAnimationFrame(render);
@@ -587,15 +597,16 @@ function drawBarras(W, H, color, mult) {
   const count = 80, bw = W / count;
   const bins = Math.floor(freqData.length / 2);
   for (let i = 0; i < count; i++) {
-    const val = freqData[Math.floor((i / count) * bins)] / 255;
+    const binIndex = Math.floor((i / count) * bins);
+    const val = freqData[binIndex] / 255;
     const h = val * H * mult;
-    const c = color ? hexToRgba(color, 0.85) : getNoteColor(i, count, 0.85);
+    const c = color ? hexToRgba(color, 0.85) : getFrequencyColor(binIndex, val, 0.85);
     const grad = ctx.createLinearGradient(0, H, 0, H - h);
     grad.addColorStop(0, c);
-    grad.addColorStop(1, color ? hexToRgba(color, 0.3) : getNoteColor(i, count, 0.4));
+    grad.addColorStop(1, color ? hexToRgba(color, 0.3) : getFrequencyColor(binIndex, val, 0.4));
     ctx.fillStyle = grad;
     ctx.fillRect(i * bw + 1, H - h, bw - 2, h);
-    ctx.fillStyle = color ? hexToRgba(color, 1) : getNoteColor(i, count, 1);
+    ctx.fillStyle = color ? hexToRgba(color, 1) : getFrequencyColor(binIndex, val, 1);
     ctx.fillRect(i * bw + 1, H - h - 2, bw - 2, 2);
   }
 }
@@ -603,9 +614,10 @@ function drawBarras(W, H, color, mult) {
 function drawEspelho(W, H, color, mult) {
   const count = 80, bw = W / count, bins = Math.floor(freqData.length / 2), cy = H / 2;
   for (let i = 0; i < count; i++) {
-    const val = freqData[Math.floor((i / count) * bins)] / 255;
+    const binIndex = Math.floor((i / count) * bins);
+    const val = freqData[binIndex] / 255;
     const h = val * cy * mult;
-    ctx.fillStyle = color ? hexToRgba(color, 0.85) : getNoteColor(i, count, 0.85);
+    ctx.fillStyle = color ? hexToRgba(color, 0.85) : getFrequencyColor(binIndex, val, 0.85);
     ctx.fillRect(i * bw + 1, cy - h, bw - 2, h);
     ctx.fillRect(i * bw + 1, cy, bw - 2, h);
   }
@@ -619,7 +631,9 @@ function drawOnda(W, H, color, mult) {
     const y = H / 2 + v * H * 0.4 * mult;
     i === 0 ? ctx.moveTo(0, y) : ctx.lineTo(i * sliceW, y);
   }
-  ctx.strokeStyle = color ? hexToRgba(color, 0.9) : getNoteColor(0, 1, 0.9);
+  const dominantBin = getDominantFrequencyBin();
+  const dominantLevel = (freqData[dominantBin] || 0) / 255;
+  ctx.strokeStyle = color ? hexToRgba(color, 0.9) : getFrequencyColor(dominantBin, dominantLevel, 0.9);
   ctx.lineWidth = 2.5; ctx.lineJoin = 'round'; ctx.lineCap = 'round'; ctx.stroke();
   ctx.save(); ctx.filter = 'blur(6px)'; ctx.lineWidth = 6; ctx.globalAlpha = 0.2; ctx.stroke(); ctx.restore();
 }
@@ -632,7 +646,18 @@ function drawLinha(W, H, color, mult) {
     const y = H - (freqData[i] / 255) * H * mult;
     i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
   }
-  ctx.strokeStyle = color ? hexToRgba(color, 0.85) : getNoteColor(0, 1, 0.85);
+  if (color) {
+    ctx.strokeStyle = hexToRgba(color, 0.85);
+  } else {
+    const spectrumGradient = ctx.createLinearGradient(0, 0, W, 0);
+    const stops = 24;
+    for (let stop = 0; stop <= stops; stop++) {
+      const position = stop / stops;
+      const binIndex = Math.floor(position * (count - 1));
+      spectrumGradient.addColorStop(position, getFrequencyColor(binIndex, freqData[binIndex] / 255, 0.85));
+    }
+    ctx.strokeStyle = spectrumGradient;
+  }
   ctx.lineWidth = 2; ctx.stroke();
 }
 
@@ -646,22 +671,23 @@ function drawCirculos(W, H, color, mult) {
     const r = (maxR / count) * (ring + 1) * (0.6 + avg * 0.5 * mult);
     ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2);
     const alpha = 0.7 - ring * 0.08;
-    ctx.strokeStyle = color ? hexToRgba(color, alpha) : getNoteColor(ring, count, alpha);
+    const ringBin = Math.min(freqData.length - 1, binStart + 10);
+    ctx.strokeStyle = color ? hexToRgba(color, alpha) : getFrequencyColor(ringBin, avg, alpha);
     ctx.lineWidth = 1.5 + avg * 4 * mult; ctx.stroke();
   }
   const centerVal = freqData[1] / 255;
   ctx.beginPath(); ctx.arc(cx, cy, 5 + centerVal * 20 * mult, 0, Math.PI * 2);
-  ctx.fillStyle = color ? hexToRgba(color, 0.9) : getNoteColor(0, 1, 0.9); ctx.fill();
+  ctx.fillStyle = color ? hexToRgba(color, 0.9) : getFrequencyColor(1, centerVal, 0.9); ctx.fill();
 }
 
 function drawPontos(W, H, color, mult) {
   const cols = 28, rows = 16, cx = W / (cols + 1), cy = H / (rows + 1);
   for (let r = 0; r < rows; r++) {
     for (let c = 0; c < cols; c++) {
-      const binIdx = Math.floor(((r * cols + c) / (rows * cols)) * freqData.length * 0.7);
+      const binIdx = Math.floor((c / cols) * freqData.length * 0.7);
       const val = (freqData[binIdx] || 0) / 255;
       ctx.beginPath(); ctx.arc((c + 1) * cx, (r + 1) * cy, val * 14 * mult + 2, 0, Math.PI * 2);
-      ctx.fillStyle = color ? hexToRgba(color, 0.2 + val * 0.8) : getNoteColor(c, cols, 0.2 + val * 0.8);
+      ctx.fillStyle = color ? hexToRgba(color, 0.2 + val * 0.8) : getFrequencyColor(binIdx, val, 0.2 + val * 0.8);
       ctx.fill();
     }
   }
@@ -671,62 +697,127 @@ function drawRadial(W, H, color, mult) {
   const cx = W / 2, cy = H / 2, count = 120, bins = Math.floor(freqData.length * 0.6);
   for (let i = 0; i < count; i++) {
     const angle = (i / count) * Math.PI * 2;
-    const val = (freqData[Math.floor((i / count) * bins)] || 0) / 255;
+    const binIndex = Math.floor((i / count) * bins);
+    const val = (freqData[binIndex] || 0) / 255;
     const len = val * Math.min(W, H) * 0.4 * mult;
     ctx.beginPath(); ctx.moveTo(cx + Math.cos(angle) * 30, cy + Math.sin(angle) * 30);
     ctx.lineTo(cx + Math.cos(angle) * (30 + len), cy + Math.sin(angle) * (30 + len));
-    ctx.strokeStyle = color ? hexToRgba(color, 0.6 + val * 0.4) : getNoteColor(i, count, 0.6 + val * 0.4);
+    ctx.strokeStyle = color ? hexToRgba(color, 0.6 + val * 0.4) : getFrequencyColor(binIndex, val, 0.6 + val * 0.4);
     ctx.lineWidth = 1 + val * 2; ctx.stroke();
   }
 }
 
-let polyRot = 0;
-function drawPoligonos(W, H, color, mult) {
-  const cx = W / 2, cy = H / 2, bins = freqData.length;
-  let avg = 0;
-  for (let i = 0; i < 64; i++) avg += freqData[i];
-  avg = avg / 64 / 255;
-  polyRot += 0.008 + avg * 0.03;
-  const maxR = Math.min(W, H) * 0.4;
-  for (let i = 0; i < 80; i++) {
-    const angle = (i / 80) * Math.PI * 2;
-    const val = (freqData[Math.floor((i / 80) * bins * 0.7)] || 0) / 255;
-    const len = val * maxR * 0.7 * mult;
-    if (len < 2) continue;
-    ctx.beginPath(); ctx.moveTo(cx + Math.cos(angle) * 40, cy + Math.sin(angle) * 40);
-    ctx.lineTo(cx + Math.cos(angle) * (40 + len), cy + Math.sin(angle) * (40 + len));
-    ctx.strokeStyle = color ? hexToRgba(color, 0.4 + val * 0.4) : getNoteColor(i, bins, 0.4 + val * 0.4);
-    ctx.lineWidth = 1 + val * 1.5; ctx.stroke();
-  }
-  const outerR = (0.15 + avg * 0.1 * mult) * Math.min(W, H);
-  const innerR = outerR * (0.6 + avg * 0.2);
-  const clr = color || getNoteColor(Math.floor(avg * 7), 7, 1);
-  drawPolygonFilled(cx, cy, outerR, 6, polyRot, clr, 0.12);
-  drawPolygonStroke(cx, cy, outerR, 6, polyRot, clr, 0.8, 2);
-  drawPolygonStroke(cx, cy, innerR, 3, -polyRot * 1.3, clr, 0.9, 2);
-  drawPolygonStroke(cx, cy, innerR * 0.7, 3, polyRot * 2, clr, 0.7, 1.5);
-  const grd = ctx.createRadialGradient(cx, cy, 0, cx, cy, innerR * 0.5);
-  grd.addColorStop(0, hexToRgba(clr, 0.25 + avg * 0.3));
-  grd.addColorStop(1, hexToRgba(clr, 0));
-  ctx.fillStyle = grd; ctx.beginPath(); ctx.arc(cx, cy, innerR * 0.5, 0, Math.PI * 2); ctx.fill();
-}
+function drawVortice(W, H, color, mult, phase, live) {
+  const cx = W / 2, cy = H / 2;
+  const minDimension = Math.min(W, H);
+  const sampleRate = audioCtx?.sampleRate || 48000;
+  const minBin = Math.max(1, Math.floor(55 * FFT / sampleRate));
+  const maxBin = Math.min(freqData?.length - 1 || 0, Math.ceil(4000 * FFT / sampleRate));
+  let energy = 0;
+  let measuredBins = 0;
 
-function drawPolygonFilled(cx, cy, r, sides, rot, color, alpha) {
-  ctx.beginPath();
-  for (let i = 0; i < sides; i++) {
-    const angle = rot + (i / sides) * Math.PI * 2;
-    ctx.lineTo(cx + Math.cos(angle) * r, cy + Math.sin(angle) * r);
+  if (live && freqData) {
+    for (let bin = minBin; bin <= maxBin; bin++) {
+      energy += freqData[bin] / 255;
+      measuredBins++;
+    }
+    energy = measuredBins ? energy / measuredBins : 0;
+    phase += 0.008 + energy * 0.035;
+  } else {
+    energy = 0.22 + (Math.sin(phase * 1.4) * 0.5 + 0.5) * 0.24;
   }
-  ctx.closePath(); ctx.fillStyle = hexToRgba(color, alpha); ctx.fill();
-}
 
-function drawPolygonStroke(cx, cy, r, sides, rot, color, alpha, lw) {
-  ctx.beginPath();
-  for (let i = 0; i < sides; i++) {
-    const angle = rot + (i / sides) * Math.PI * 2;
-    ctx.lineTo(cx + Math.cos(angle) * r, cy + Math.sin(angle) * r);
+  const dominantBin = live ? getDominantFrequencyBin() : Math.max(minBin, Math.floor(18 + (Math.sin(phase) + 1) * 9));
+  const coreColor = color || getFrequencyColor(dominantBin, energy, 1);
+  const maxRadiusX = W * 0.49;
+  const maxRadiusY = H * 0.46;
+  const strands = 112;
+
+  ctx.save();
+  ctx.globalCompositeOperation = 'screen';
+
+  const haze = ctx.createRadialGradient(cx, cy, 0, cx, cy, minDimension * 0.7);
+  haze.addColorStop(0, hexToRgba(coreColor, 0.14 + energy * 0.18));
+  haze.addColorStop(0.42, hexToRgba(coreColor, 0.055 + energy * 0.04));
+  haze.addColorStop(1, hexToRgba(coreColor, 0));
+  ctx.fillStyle = haze;
+  ctx.fillRect(cx - maxRadiusX, cy - maxRadiusY, maxRadiusX * 2, maxRadiusY * 2);
+
+  for (let strand = 0; strand < strands; strand++) {
+    const position = strand / (strands - 1);
+    const frequency = 55 * Math.pow(4000 / 55, position);
+    const binIndex = Math.max(minBin, Math.min(maxBin, Math.round(frequency * FFT / sampleRate)));
+    let level = 0;
+
+    if (live && freqData) {
+      const fromBin = Math.max(minBin, binIndex - 2);
+      const toBin = Math.min(maxBin, binIndex + 2);
+      for (let bin = fromBin; bin <= toBin; bin++) level += freqData[bin] / 255;
+      level /= Math.max(1, toBin - fromBin + 1);
+    } else {
+      level = (Math.sin(phase * 1.7 + strand * 0.19) * 0.5 + 0.5) * 0.42;
+    }
+
+    const strandColor = color || getFrequencyColor(binIndex, level, 0.2 + level * 0.72);
+    const startAngle = position * Math.PI * 2 + phase * 0.16;
+    const reach = 0.72 + level * 0.72 * mult;
+    const wobbleSize = minDimension * (0.004 + level * 0.018 * mult);
+
+    ctx.beginPath();
+    for (let step = 0; step <= 30; step++) {
+      const progress = step / 30;
+      const twist = progress * (4.3 + level * 1.7);
+      const wobble = Math.sin(phase * 2.1 + strand * 0.17 - progress * 11) * wobbleSize;
+      const radius = minDimension * 0.012 + progress * minDimension * 0.52 * reach + wobble;
+      const angle = startAngle + twist;
+      const x = cx + Math.cos(angle) * radius * (W / minDimension);
+      const y = cy + Math.sin(angle) * radius * (H / minDimension);
+      if (step === 0) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
+    }
+
+    ctx.strokeStyle = strandColor;
+    ctx.lineWidth = 0.7 + level * 2.8 * mult;
+    ctx.shadowColor = color || getFrequencyColor(binIndex, level, 0.9);
+    ctx.shadowBlur = 5 + level * 15;
+    ctx.stroke();
+
+    if (strand % 3 === 0) {
+      const endAngle = startAngle + 4.3 + level * 1.7;
+      const endRadius = minDimension * 0.012 + minDimension * 0.52 * reach;
+      ctx.beginPath();
+      ctx.arc(
+        cx + Math.cos(endAngle) * endRadius * (W / minDimension),
+        cy + Math.sin(endAngle) * endRadius * (H / minDimension),
+        0.8 + level * 2.4,
+        0,
+        Math.PI * 2
+      );
+      ctx.fillStyle = color || getFrequencyColor(binIndex, level, 0.3 + level * 0.7);
+      ctx.fill();
+    }
   }
-  ctx.closePath(); ctx.strokeStyle = hexToRgba(color, alpha); ctx.lineWidth = lw; ctx.stroke();
+
+  ctx.shadowBlur = 0;
+  for (let ring = 0; ring < 5; ring++) {
+    const radius = minDimension * (0.055 + ring * 0.027) * (1 + energy * 0.55 * mult);
+    ctx.beginPath();
+    ctx.ellipse(cx, cy, radius * (W / minDimension), radius * (H / minDimension), phase * 0.08, 0, Math.PI * 2);
+    ctx.strokeStyle = color || getFrequencyColor(dominantBin, energy, 0.08 + (4 - ring) * 0.025);
+    ctx.lineWidth = 1 + energy * 2;
+    ctx.stroke();
+  }
+
+  const coreRadius = minDimension * (0.025 + energy * 0.025 * mult);
+  const core = ctx.createRadialGradient(cx, cy, 0, cx, cy, coreRadius * 2.8);
+  core.addColorStop(0, 'rgba(255,255,255,0.88)');
+  core.addColorStop(0.22, color ? hexToRgba(color, 0.8) : getFrequencyColor(dominantBin, 1, 0.82));
+  core.addColorStop(1, color ? hexToRgba(color, 0) : getFrequencyColor(dominantBin, energy, 0));
+  ctx.fillStyle = core;
+  ctx.beginPath();
+  ctx.arc(cx, cy, coreRadius * 2.8, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
 }
 
 // ===== UI INTERACTIONS =====
@@ -856,11 +947,12 @@ async function savePreset() {
 function loadPreset(id) {
   const p = presets.find(x => x.id === id);
   if (!p) return;
-  state.shape = p.shape;
+  const shape = p.shape === 'poligonos' ? 'vortice' : p.shape;
+  state.shape = shape;
   state.colorMode = p.colorMode;
   state.intensity = p.intensity;
   state.theme = p.theme;
-  document.querySelectorAll('.shape-btn').forEach(b => b.classList.toggle('active', b.dataset.shape === p.shape));
+  document.querySelectorAll('.shape-btn').forEach(b => b.classList.toggle('active', b.dataset.shape === shape));
   setColorMode(p.colorMode);
   document.getElementById('intensitySlider').value = p.intensity;
   document.getElementById('intensityVal').textContent = p.intensity + '%';
@@ -898,7 +990,7 @@ function renderPresets() {
       <div class="preset-dot" style="background:${escapeHtml(p.color)}"></div>
       <div class="preset-info">
         <div class="preset-name">${escapeHtml(p.name)}</div>
-        <div class="preset-desc">${escapeHtml(capitalize(p.shape))} · ${escapeHtml(String(p.intensity))}%</div>
+        <div class="preset-desc">${escapeHtml(p.shape === 'poligonos' || p.shape === 'vortice' ? 'Vórtice' : capitalize(p.shape))} · ${escapeHtml(String(p.intensity))}%</div>
       </div>
       <button class="preset-del" onclick="event.stopPropagation();deletePreset(${p.id})" title="Excluir">✕</button>
     </div>
@@ -926,6 +1018,10 @@ function escapeHtml(value) {
 
 // ===== HELPERS =====
 function hexToRgba(hex, alpha) {
+  if (hex && hex.startsWith('rgba(')) {
+    const channels = hex.slice(5, -1).split(',').slice(0, 3).join(',');
+    return `rgba(${channels},${alpha})`;
+  }
   if (!hex || hex[0] !== '#') return `rgba(167,139,250,${alpha})`;
   const r = parseInt(hex.slice(1,3), 16);
   const g = parseInt(hex.slice(3,5), 16);
